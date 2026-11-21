@@ -81,11 +81,19 @@ KIVI 将 Key Cache 按通道量化、Value Cache 按 token 量化到 2/4 bit，�
 conda create -n sinkbudget python=3.10
 conda activate sinkbudget
 pip install --upgrade pip
+
+# 安装主包
 pip install -e .
 
-# 编译 CUDA 扩展（KIVI cache 路径需要）
-cd quant && pip install -e . && cd ..
+# 编译 KIVI CUDA 扩展 kivi_gemv（量化 cache 路径必需）。
+# 需要 NVIDIA GPU、与 torch 匹配的 CUDA toolkit，且 nvcc 在 PATH 中。
+# 修改 quant/csrc/ 后必须重新执行。
+cd quant
+pip install -e .
+cd ..
 ```
+
+模型默认从 **ModelScope** 拉取。传 `--model_source hf`（或在调用 `utils.modelscope_hub.resolve_model_path` 时传 `model_source="hf"`）可改回 Hugging Face Hub；模型 id 需要与所选源匹配。LongBench/GSM8K 等数据集目前仍走 Hugging Face `datasets`。
 
 ## 快速开始
 
@@ -95,8 +103,13 @@ cd quant && pip install -e . && cd ..
 import torch
 from models.llama_kivi import LlamaForCausalLM_KIVI
 from transformers import LlamaConfig, AutoTokenizer
+from utils.modelscope_hub import resolve_model_path
 
-model_path = "meta-llama/Llama-3.1-8B-Instruct"
+# 默认使用 ModelScope 模型 id；改用 HF id 时传 model_source="hf"
+model_path = resolve_model_path(
+    "LLM-Research/Meta-Llama-3.1-8B-Instruct",
+    model_source="modelscope",
+)
 
 config = LlamaConfig.from_pretrained(model_path)
 config.k_bits = 2              # 2 或 4
@@ -133,16 +146,19 @@ Mistral 使用 `models.mistral_kivi` 中的 `MistralForCausalLM_KIVI` 与 `Mistr
 python example.py              # Llama-3.1-8B-Instruct GSM8K 5-shot
 python long_context_example.py # passkey 检索
 python mem_spd_test.py         # 耗时与 peak memory
+
+# 三个脚本都支持 --model_name_or_path / --cache_dir / --model_source（默认 modelscope）
+python example.py --model_source hf --model_name_or_path meta-llama/Llama-3.1-8B-Instruct
 ```
 
 ### LongBench
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 meta-llama/Llama-2-7b-hf
-python eval_long_bench.py --model Llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
 ```
 
-`scripts/long_test.sh` 的参数顺序是 `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL}`。预测结果写入 `pred/`，再由 `eval_long_bench.py` 评分。数据集与 prompt 配置位于 `config/`。
+`scripts/long_test.sh` 的参数顺序是 `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`。`MODEL_SOURCE` 默认为 `modelscope`；传 `hf` 可使用 `meta-llama/Llama-2-7b-hf` 这类 HF 模型 id。预测结果写入 `pred/`，再由 `eval_long_bench.py` 评分。数据集与 prompt 配置位于 `config/`。
 
 ## 仓库结构
 

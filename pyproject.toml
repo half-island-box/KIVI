@@ -21,7 +21,8 @@ dependencies = [
     "fastchat",
     "protobuf",
     "flash-attn",
-    "datasets"
+    "datasets",
+    "modelscope"
 ]
 
 [tool.setuptools.packages.find]

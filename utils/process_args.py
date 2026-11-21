@@ -17,6 +17,13 @@ class ModelArguments:
     model_name_or_path: str = field(
         default=None, metadata={"help": "Output model local path, do not set manually"}
     )
+    model_source: Optional[str] = field(
+        default='modelscope',
+        metadata={
+            "help": "Where to fetch model config/tokenizer/weights: "
+            "'modelscope' (default) or 'hf'."
+        },
+    )
     k_bits: Optional[int] = field(
         default=2,
         metadata={"help": "KV_cache quantization bits."},

@@ -75,17 +75,25 @@ For an in-depth walkthrough of the cache state machine, kernel layout, and exten
 
 ## Installation
 
-Requirements: Python ≥ 3.10, an NVIDIA GPU, CUDA toolkit, and the dependencies pinned in `pyproject.toml` (`torch==2.4.1`, `transformers==4.43.1`, `flash-attn`). `requirements.txt` is a legacy lock file and is not the source of truth.
+Requirements: Python ≥ 3.10, an NVIDIA GPU, CUDA toolkit, and the dependencies pinned in `pyproject.toml` (`torch==2.4.1`, `transformers==4.43.1`, `flash-attn`, `modelscope`). `requirements.txt` is a legacy lock file and is not the source of truth.
 
 ```bash
 conda create -n sinkbudget python=3.10
 conda activate sinkbudget
 pip install --upgrade pip
+
+# Main package
 pip install -e .
 
-# Build the CUDA extension (required for the KIVI cache path)
-cd quant && pip install -e . && cd ..
+# Build the KIVI CUDA extension `kivi_gemv` (required by the quantized cache path).
+# Needs an NVIDIA GPU, a CUDA toolkit matching the installed torch, and nvcc on PATH.
+# Re-run this after changing anything under quant/csrc/.
+cd quant
+pip install -e .
+cd ..
 ```
+
+Models are fetched from **ModelScope by default**. Pass `--model_source hf` (or `model_source="hf"` when calling `utils.modelscope_hub.resolve_model_path`) to load from Hugging Face Hub instead; model ids must be valid on the selected source. LongBench/GSM8K dataset loading still goes through Hugging Face `datasets` for now.
 
 ## Quick start
 
@@ -95,8 +103,13 @@ cd quant && pip install -e . && cd ..
 import torch
 from models.llama_kivi import LlamaForCausalLM_KIVI
 from transformers import LlamaConfig, AutoTokenizer
+from utils.modelscope_hub import resolve_model_path
 
-model_path = "meta-llama/Llama-3.1-8B-Instruct"
+# ModelScope id by default; use model_source="hf" for a Hugging Face id.
+model_path = resolve_model_path(
+    "LLM-Research/Meta-Llama-3.1-8B-Instruct",
+    model_source="modelscope",
+)
 
 config = LlamaConfig.from_pretrained(model_path)
 config.k_bits = 2              # 2 or 4
@@ -133,16 +146,19 @@ For Mistral, import `MistralForCausalLM_KIVI` from `models.mistral_kivi` and use
 python example.py              # GSM8K 5-shot with Llama-3.1-8B-Instruct
 python long_context_example.py # passkey retrieval
 python mem_spd_test.py         # latency and peak memory
+
+# All three accept --model_name_or_path / --cache_dir / --model_source (default: modelscope)
+python example.py --model_source hf --model_name_or_path meta-llama/Llama-3.1-8B-Instruct
 ```
 
 ### LongBench
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 meta-llama/Llama-2-7b-hf
-python eval_long_bench.py --model Llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
 ```
 
-`scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL}`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
+`scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`. `MODEL_SOURCE` defaults to `modelscope`; pass `hf` to use a Hugging Face id such as `meta-llama/Llama-2-7b-hf`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
 
 ## Repository layout
 

@@ -1,9 +1,18 @@
 # LLaMA model with KIVI
+import argparse
 import torch
 import os
 from models.llama_kivi import LlamaForCausalLM_KIVI
 from transformers import LlamaConfig, AutoTokenizer
+from utils.modelscope_hub import add_model_source_argument, resolve_model_path
 import time
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_name_or_path", type=str,
+                    default="LLM-Research/llama-2-7b-hf")
+parser.add_argument("--cache_dir", type=str, default="./cached_models")
+add_model_source_argument(parser)
+args = parser.parse_args()
 
 K_BITS = 2
 V_BITS = 2
@@ -12,17 +21,22 @@ RESIDUAL_LENGTH = 128
 BATCH_SIZE = 96
 PATH_TO_YOUR_SAVE_DIR = './cached_models'
 
-model_name_or_path = 'meta-llama/Llama-2-7b-hf'
-config = LlamaConfig.from_pretrained(model_name_or_path)
+model_name_or_path = args.model_name_or_path
+CACHE_DIR = args.cache_dir or PATH_TO_YOUR_SAVE_DIR
+model_path = resolve_model_path(
+    model_name_or_path,
+    model_source=args.model_source,
+    cache_dir=CACHE_DIR,
+)
+config = LlamaConfig.from_pretrained(model_path)
 config.k_bits = K_BITS # current support 2/4 bit for KV Cache
 config.v_bits = V_BITS # current support 2/4 bit for KV Cache
 config.group_size = GROUP_SIZE
 config.residual_length = RESIDUAL_LENGTH # the number of recent fp16 tokens
-CACHE_DIR = PATH_TO_YOUR_SAVE_DIR
 
 if K_BITS < 16 and V_BITS < 16:
     model = LlamaForCausalLM_KIVI.from_pretrained(
-        pretrained_model_name_or_path=model_name_or_path,
+        pretrained_model_name_or_path=model_path,
         config=config,
         cache_dir=CACHE_DIR,
         torch_dtype=torch.float16,
@@ -32,7 +46,7 @@ if K_BITS < 16 and V_BITS < 16:
 else:
     from transformers import LlamaForCausalLM
     model = LlamaForCausalLM.from_pretrained(
-        pretrained_model_name_or_path=model_name_or_path,
+        pretrained_model_name_or_path=model_path,
         config=config,
         cache_dir=CACHE_DIR,
         torch_dtype=torch.float16,
@@ -41,9 +55,9 @@ else:
     )
 
 tokenizer = AutoTokenizer.from_pretrained(
-    model_name_or_path, 
-    use_fast=False, 
-    trust_remote_code=True, 
+    model_path,
+    use_fast=False,
+    trust_remote_code=True,
     tokenizer_type='llama')
 
 model.cuda().eval()

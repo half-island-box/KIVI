@@ -9,6 +9,7 @@ import argparse
 os.environ["WANDB_DISABLED"] = "true"
 
 from utils.process_args import process_args
+from utils.modelscope_hub import resolve_model_path
 from transformers import LlamaConfig, MistralConfig, AutoTokenizer
 
 
@@ -104,20 +105,26 @@ if __name__ == '__main__':
     model_args, data_args, training_args = process_args()
     # print(model_args, data_args, training_args)
     model_name = model_args.model_name_or_path.split("/")[-1]
+    # Resolve the model id through the selected source (ModelScope by default).
+    model_path = resolve_model_path(
+        model_args.model_name_or_path,
+        model_source=model_args.model_source,
+        cache_dir=training_args.cache_dir,
+    )
     # dtype = torch.bfloat16 if training_args.bf16 else torch.float
     dtype = torch.float16
-    
+
     if 'llama' in model_args.model_name_or_path.lower() or 'longchat' in model_args.model_name_or_path.lower():
-        config = LlamaConfig.from_pretrained(model_args.model_name_or_path)
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, 
-                                            use_fast=False, 
-                                            trust_remote_code=True, 
+        config = LlamaConfig.from_pretrained(model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path,
+                                            use_fast=False,
+                                            trust_remote_code=True,
                                             tokenizer_type='llama')
                                             # model_max_length=training_args.model_max_length)
     elif 'mistral' in model_args.model_name_or_path.lower():
-        config = MistralConfig.from_pretrained(model_args.model_name_or_path)
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, 
-                                            use_fast=False, 
+        config = MistralConfig.from_pretrained(model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path,
+                                            use_fast=False,
                                             trust_remote_code=True)
     else:
         raise NotImplementedError
@@ -131,7 +138,7 @@ if __name__ == '__main__':
             config.residual_length = model_args.residual_length
             config.use_flash = True # Note: We activate the flashattention to speed up the inference
             model = LlamaForCausalLM_KIVI.from_pretrained(
-                pretrained_model_name_or_path=model_args.model_name_or_path,
+                pretrained_model_name_or_path=model_path,
                 config=config,
                 cache_dir=training_args.cache_dir,
                 torch_dtype=dtype,
@@ -141,7 +148,7 @@ if __name__ == '__main__':
         else:
             from transformers import LlamaForCausalLM
             model = LlamaForCausalLM.from_pretrained(
-                pretrained_model_name_or_path=model_args.model_name_or_path,
+                pretrained_model_name_or_path=model_path,
                 config=config,
                 cache_dir=training_args.cache_dir,
                 torch_dtype=dtype,
@@ -159,7 +166,7 @@ if __name__ == '__main__':
             config.residual_length = model_args.residual_length
             config.use_flash = True
             model = MistralForCausalLM_KIVI.from_pretrained(
-                pretrained_model_name_or_path=model_args.model_name_or_path,
+                pretrained_model_name_or_path=model_path,
                 config=config,
                 cache_dir=training_args.cache_dir,
                 torch_dtype=dtype,
@@ -169,7 +176,7 @@ if __name__ == '__main__':
         else:
             from transformers import MistralForCausalLM
             model = MistralForCausalLM.from_pretrained(
-                pretrained_model_name_or_path=model_args.model_name_or_path,
+                pretrained_model_name_or_path=model_path,
                 config=config,
                 cache_dir=training_args.cache_dir,
                 torch_dtype=dtype,

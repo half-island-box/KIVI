@@ -1,35 +1,50 @@
 # LLaMA model with KIVI
 import warnings
 warnings.filterwarnings("ignore")
+import argparse
 import torch
 import random
 from models.llama_kivi import LlamaForCausalLM_KIVI
 from transformers import LlamaConfig, AutoTokenizer
 from datasets import load_dataset
+from utils.modelscope_hub import add_model_source_argument, resolve_model_path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_name_or_path", type=str,
+                    default="LLM-Research/Meta-Llama-3.1-8B-Instruct")
+parser.add_argument("--cache_dir", type=str, default=None)
+add_model_source_argument(parser)
+args = parser.parse_args()
+
+model_path = resolve_model_path(
+    args.model_name_or_path,
+    model_source=args.model_source,
+    cache_dir=args.cache_dir,
+)
 
 # For reproducibility
 random.seed(0)
 torch.manual_seed(0)
 
-config = LlamaConfig.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
+config = LlamaConfig.from_pretrained(model_path)
 
 config.k_bits = 2 # KiVi currently support 2/4 K/V bits
 config.v_bits = 2
-config.group_size = 32 
+config.group_size = 32
 config.residual_length = 32 # corresponding to the number of recent fp16 tokens
 config.use_flash = True
 
 model = LlamaForCausalLM_KIVI.from_pretrained(
     # pretrained_model_name_or_path='meta-llama/Llama-2-7b-hf',
-    pretrained_model_name_or_path='meta-llama/Llama-3.1-8B-Instruct',
+    pretrained_model_name_or_path=model_path,
     config=config,
     low_cpu_mem_usage=True,
     torch_dtype=torch.float16,
 ).cuda()
 
 enc = AutoTokenizer.from_pretrained(
-    'meta-llama/Llama-3.1-8B-Instruct', 
-    use_fast=False, 
+    model_path,
+    use_fast=False,
     trust_remote_code=True)
 
 dataset = load_dataset('gsm8k', 'main')
