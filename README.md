@@ -87,13 +87,19 @@ pip install -e .
 
 # Build the KIVI CUDA extension `kivi_gemv` (required by the quantized cache path).
 # Needs an NVIDIA GPU, a CUDA toolkit matching the installed torch, and nvcc on PATH.
+# `--no-build-isolation` is required: quant/setup.py imports torch, but pip's
+# isolated build env only contains setuptools, so without this flag the build
+# fails with `ModuleNotFoundError: No module named 'torch'`.
 # Re-run this after changing anything under quant/csrc/.
 cd quant
-pip install -e .
+pip install -e . --no-build-isolation
 cd ..
 ```
 
-Models are fetched from **ModelScope by default**. Pass `--model_source hf` (or `model_source="hf"` when calling `utils.modelscope_hub.resolve_model_path`) to load from Hugging Face Hub instead; model ids must be valid on the selected source. LongBench/GSM8K dataset loading still goes through Hugging Face `datasets` for now.
+Models are fetched from **ModelScope by default**. Pass `--model_source hf` (or `model_source="hf"` when calling `utils.modelscope_hub.resolve_model_path`) to load from Hugging Face Hub instead; model ids must be valid on the selected source. LongBench/GSM8K dataset loading still goes through Hugging Face `datasets` for now, which means it needs network access to `huggingface.co`:
+
+- unreachable network: the download fails with `MaxRetryError(... huggingface.co ...)` / `[Errno 101] Network is unreachable`. Point the client at a mirror with `export HF_ENDPOINT=https://hf-mirror.com`, or pre-download the dataset on a networked machine and run offline via `export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1` (optionally `HF_DATASETS_CACHE=<dir>`).
+- Moving dataset loading to ModelScope is tracked under M0 in the roadmap.
 
 ## Quick start
 
