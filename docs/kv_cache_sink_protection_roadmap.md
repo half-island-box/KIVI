@@ -206,7 +206,46 @@ python scripts/m0_baseline.py check \
 python scripts/m0_baseline.py env --out results/m0_baselines/env.json
 ```
 
-Llama 原始项目示例链路（需要 GPU 与已下载模型）：
+当前验证状态（2026-11-22）：静态检查通过；`m0_baseline.py check` 对冻结配置返回 `ok: true`、对 `residual_length=100, group_size=32` 正确报错。CUDA、示例、LongBench 与基线重复运行均待 GPU 执行，结果将补入 `docs/m0_llama_baseline.md`。
+
+### M0 GPU 验证命令（待执行）
+
+以下命令需要在具备 NVIDIA GPU、CUDA toolkit 与完整依赖的机器上按顺序执行；结果补回 `docs/m0_llama_baseline.md`。
+
+#### 1. 安装与编译
+
+```bash
+conda create -n sinkbudget python=3.10 -y
+conda activate sinkbudget
+pip install --upgrade pip
+pip install -e .
+
+# CUDA 扩展必须关闭 build isolation，否则隔离构建环境里没有 torch
+cd quant
+pip install -e . --no-build-isolation
+cd ..
+```
+
+#### 2. 环境记录与配置校验
+
+```bash
+python scripts/m0_baseline.py env --out results/m0_baselines/env.json
+python scripts/m0_baseline.py check \
+    --k-bits 2 --v-bits 2 --group-size 32 --residual-length 128
+```
+
+#### 3. 静态检查与 CUDA 算子自测
+
+```bash
+python -m compileall models quant utils metrics.py
+
+# 注意：quant/gemv.py 与 quant/test.py 顶部硬编码了 CUDA_VISIBLE_DEVICES=2，
+# 运行前按机器情况调整。
+python quant/gemv.py
+(cd quant && python test.py)
+```
+
+#### 4. 示例链路
 
 ```bash
 python example.py
@@ -214,7 +253,7 @@ python long_context_example.py
 python mem_spd_test.py
 ```
 
-LongBench smoke（先用 Llama-2-7b 验证链路；Llama-3.1 的 maxlen 已补为 120000）：
+#### 5. LongBench smoke（先 Llama-2-7b，再 Llama-3.1-8B）
 
 ```bash
 bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
@@ -224,21 +263,48 @@ bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
 python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_120000_2bits_group32_residual128
 ```
 
-基线重复运行（成功与失败都会落盘，详细矩阵见 `docs/m0_llama_baseline.md`）：
+#### 6. 基线矩阵：每个配置重复 3 次
+
+成功与失败尝试都由 `scripts/m0_baseline.py run` 落盘到 `results/m0_baselines/`。
+
+Llama-2-7b-hf：
 
 ```bash
+python scripts/m0_baseline.py run --name llama2_fp16_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 16 16 32 128 LLM-Research/llama-2-7b-hf
 python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
     bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+python scripts/m0_baseline.py run --name llama2_kivi4_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 4 4 32 128 LLM-Research/llama-2-7b-hf
 ```
 
-CUDA 算子自测：
+Llama-3.1-8B-Instruct：
 
 ```bash
-python quant/gemv.py
-cd quant && python test.py
+python scripts/m0_baseline.py run --name llama31_fp16_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 16 16 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
+python scripts/m0_baseline.py run --name llama31_kivi2_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
+python scripts/m0_baseline.py run --name llama31_kivi4_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 4 4 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
 ```
 
-当前验证状态（2026-11-22）：静态检查通过；`m0_baseline.py check` 对冻结配置返回 `ok: true`、对 `residual_length=100, group_size=32` 正确报错。CUDA、示例、LongBench 与基线重复运行均待 GPU 执行，结果将补入 `docs/m0_llama_baseline.md`。
+注意：`long_test.sh` 每次运行会覆盖同名 `pred/` 目录。若需保留逐次分数，把评分与结果复制接进 `run` 命令：
+
+```bash
+python scripts/m0_baseline.py run --name llama2_kivi2_r1 --repeat 1 -- \
+    bash -c 'bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf && \
+             python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128 && \
+             cp pred/llama-2-7b-hf_4096_2bits_group32_residual128/result.json \
+                results/m0_baselines/llama2_kivi2_r1_result.json'
+```
+
+#### 7. 结果归档
+
+- 把 `results/m0_baselines/env.json` 中的 GPU / CUDA / 依赖版本填入 `docs/m0_llama_baseline.md` 第 4 节；
+- 把 3 次重复的分数与波动填入第 6.3 节；
+- 把失败 run 的 `returncode` / `stderr` 与原因填入第 8 节；
+- 全部通过后，把本节 M0 验收勾选更新为完成。
 
 ---
 
