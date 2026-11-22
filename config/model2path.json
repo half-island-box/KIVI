@@ -5,5 +5,9 @@
     "internlm-7b-8k": "internlm/internlm-chat-7b-8k",
     "chatglm2-6b": "THUDM/chatglm2-6b",
     "chatglm2-6b-32k": "THUDM/chatglm2-6b-32k",
-    "vicuna-v1.5-7b-16k": "lmsys/vicuna-7b-v1.5-16k"
+    "vicuna-v1.5-7b-16k": "lmsys/vicuna-7b-v1.5-16k",
+    "Llama-2-7b-hf": "meta-llama/Llama-2-7b-hf",
+    "llama-2-7b-hf": "LLM-Research/llama-2-7b-hf",
+    "Llama-3.1-8B-Instruct": "meta-llama/Llama-3.1-8B-Instruct",
+    "Meta-Llama-3.1-8B-Instruct": "LLM-Research/Meta-Llama-3.1-8B-Instruct"
 }
