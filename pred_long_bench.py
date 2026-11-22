@@ -10,6 +10,7 @@ os.environ["WANDB_DISABLED"] = "true"
 
 from utils.process_args import process_args
 from utils.modelscope_hub import resolve_model_path
+from utils.tokenizer_utils import load_llama_tokenizer
 from transformers import LlamaConfig, MistralConfig, AutoTokenizer
 
 
@@ -116,11 +117,7 @@ if __name__ == '__main__':
 
     if 'llama' in model_args.model_name_or_path.lower() or 'longchat' in model_args.model_name_or_path.lower():
         config = LlamaConfig.from_pretrained(model_path)
-        tokenizer = AutoTokenizer.from_pretrained(model_path,
-                                            use_fast=False,
-                                            trust_remote_code=True,
-                                            tokenizer_type='llama')
-                                            # model_max_length=training_args.model_max_length)
+        tokenizer = load_llama_tokenizer(model_path, model_args.model_name_or_path)
     elif 'mistral' in model_args.model_name_or_path.lower():
         config = MistralConfig.from_pretrained(model_path)
         tokenizer = AutoTokenizer.from_pretrained(model_path,

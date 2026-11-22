@@ -5,9 +5,10 @@ import argparse
 import torch
 import random
 from models.llama_kivi import LlamaForCausalLM_KIVI
-from transformers import LlamaConfig, AutoTokenizer
+from transformers import LlamaConfig
 from datasets import load_dataset
 from utils.modelscope_hub import add_model_source_argument, resolve_model_path
+from utils.tokenizer_utils import load_llama_tokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name_or_path", type=str,
@@ -42,10 +43,7 @@ model = LlamaForCausalLM_KIVI.from_pretrained(
     torch_dtype=torch.float16,
 ).cuda()
 
-enc = AutoTokenizer.from_pretrained(
-    model_path,
-    use_fast=False,
-    trust_remote_code=True)
+enc = load_llama_tokenizer(model_path, args.model_name_or_path)
 
 dataset = load_dataset('gsm8k', 'main')
 

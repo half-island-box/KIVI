@@ -3,13 +3,14 @@ import argparse
 import torch
 import os
 from models.llama_kivi import LlamaForCausalLM_KIVI
-from transformers import LlamaConfig, AutoTokenizer
+from transformers import LlamaConfig
 from utils.modelscope_hub import add_model_source_argument, resolve_model_path
+from utils.tokenizer_utils import load_llama_tokenizer
 import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name_or_path", type=str,
-                    default="LLM-Research/llama-2-7b-hf")
+                    default="modelscope/Llama-2-7b-ms")
 parser.add_argument("--cache_dir", type=str, default="./cached_models")
 add_model_source_argument(parser)
 args = parser.parse_args()
@@ -54,11 +55,7 @@ else:
         device_map="auto",
     )
 
-tokenizer = AutoTokenizer.from_pretrained(
-    model_path,
-    use_fast=False,
-    trust_remote_code=True,
-    tokenizer_type='llama')
+tokenizer = load_llama_tokenizer(model_path, model_name_or_path)
 
 model.cuda().eval()
 
