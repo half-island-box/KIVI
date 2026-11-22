@@ -4,7 +4,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-> **Project status (2026-11-21):** SinkBudget is a research fork of [KIVI](https://github.com/jy-yuan/KIVI). The upstream KIVI baseline is runnable today; the sink-aware research modules are **not implemented yet**. The current milestone is **M0**: run the original project end to end and confirm the **Llama-first** model strategy (Qwen2.5 is deferred to M5.5). See the [roadmap](docs/kv_cache_sink_protection_roadmap.md) for the staged plan.
+> **Project status (2026-11-22):** SinkBudget is a research fork of [KIVI](https://github.com/jy-yuan/KIVI). The upstream KIVI baseline is runnable today; the sink-aware research modules are **not implemented yet**. Milestone **M0** is in progress: the **Llama-first (L1)** strategy is confirmed, the Llama model configs and the baseline recorder are in place, and the static check passes. GPU-dependent smoke tests and baseline repeats still need to run on an NVIDIA GPU. See the [roadmap](docs/kv_cache_sink_protection_roadmap.md) and the [M0 baseline record](docs/m0_llama_baseline.md).
 
 ## Overview
 
@@ -51,7 +51,7 @@ Design constraints:
 
 | Stage | Scope | Status |
 |---|---|---|
-| M0 | Run the original KIVI project end to end; agree on the new test model; freeze baselines | Not started |
+| M0 | Run the original KIVI project end to end; agree on the new test model; freeze baselines | In progress — non-GPU setup done; GPU runs pending |
 | M1 | Attention statistics and sink-score prototype | Not started |
 | M2 | Fake-quant protection and layer-wise budget allocation | Not started |
 | M3 | Main baseline matrix and long-context accuracy experiments | Not started |
@@ -60,7 +60,7 @@ Design constraints:
 | M6 | Efficiency systematization and kernel prototype | Not started |
 | M7 | Ablations, paper, and reproducibility package | Not started |
 
-The current focus is M0.1 (verify the baseline project: environment, CUDA extension, examples, LongBench) and M0.2 (confirm the model strategy with the user: M1–M5 on Llama-3.1-8B, Qwen2.5 ported at M5.5). The upstream KIVI implementation remains the executable baseline for now.
+M0.2 is settled: **L1** was confirmed with the user — M1–M5 run on `Llama-3.1-8B-Instruct` with `Llama-2-7b-hf` as the MHA regression model, and Qwen2.5 is deferred to M5.5. M0.1/M0.3 are partially done: the static check passes, the Llama configs and `scripts/m0_baseline.py` are in place, while the CUDA extension, examples, LongBench smoke, and three-repeat baselines await a GPU host. The upstream KIVI implementation remains the executable baseline for now.
 
 ## Baseline: what runs today
 
@@ -166,6 +166,25 @@ python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
 
 `scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`. `MODEL_SOURCE` defaults to `modelscope`; pass `hf` to use a Hugging Face id such as `meta-llama/Llama-2-7b-hf`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
 
+### M0 baseline records
+
+The M0 scaffolding is in place. GPU-dependent runs still need to be executed on a machine with an NVIDIA GPU:
+
+```bash
+# Validate the frozen KIVI config without a GPU
+python scripts/m0_baseline.py check \
+    --k-bits 2 --v-bits 2 --group-size 32 --residual-length 128
+
+# Record GPU/CUDA/PyTorch/Transformers/git metadata
+python scripts/m0_baseline.py env --out results/m0_baselines/env.json
+
+# Repeat a baseline three times; successes and failures are both persisted
+python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+```
+
+Raw records land in `results/m0_baselines/` (git-ignored). The curated status, fixed KIVI configuration, L1 model-selection record, and the GPU TODO list live in the [M0 Llama baseline record](docs/m0_llama_baseline.md) (Chinese).
+
 ## Repository layout
 
 ```text
@@ -173,7 +192,7 @@ models/        KIVI implementations for Llama and Mistral (*_kivi.py)
 quant/         Triton quantization/packing + CUDA extension (kivi_gemv)
 utils/         argument parsing and data helpers
 config/        model paths, max lengths, and LongBench prompts
-scripts/       long_test.sh
+scripts/       long_test.sh, m0_baseline.py
 docs/          research plan, roadmap, code walkthrough, LongBench results
 example.py, long_context_example.py, mem_spd_test.py
 pred_long_bench.py, eval_long_bench.py, metrics.py
@@ -193,6 +212,7 @@ Accuracy and efficiency will be compared under identical model, tokenization, ge
 
 - [Research proposal (Chinese)](docs/KV%20Cache量化优化.md) — problem, method, baselines, ablations, risks.
 - [Engineering roadmap (Chinese)](docs/kv_cache_sink_protection_roadmap.md) — M0–M7 tasks, deliverables, acceptance criteria, and verification commands.
+- [M0 Llama baseline record (Chinese)](docs/m0_llama_baseline.md) — L1 selection, fixed KIVI config, environment template, GPU TODO list.
 - [Code walkthrough (Chinese)](docs/KIVI_项目结构与代码链路分析.md) — cache state machine, kernel layout, and extension points.
 - [LongBench results](docs/long_bench.md) — upstream KIVI results for LongChat and Mistral.
 

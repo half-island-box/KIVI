@@ -157,39 +157,53 @@ Qwen2.5 相关文件（`models/qwen2_kivi.py`、Qwen loader 分支、Qwen 配置
 
 Llama 原始项目跑通：
 
-- [ ] `python -m compileall models quant utils metrics.py` 通过；
-- [ ] CUDA 算子编译成功，`quant/gemv.py` 自测通过；
-- [ ] `example.py`、`long_context_example.py`、`mem_spd_test.py` 至少各成功运行一次；
-- [ ] LongBench smoke 能完成预测与评分；
-- [ ] 已记录环境版本、KIVI 参数与 Llama 路径限制清单。
+- [x] `python -m compileall models quant utils metrics.py` 通过（2026-11-22，macOS / CPU-only）；
+- [ ] CUDA 算子编译成功，`quant/gemv.py` 自测通过（待 GPU）；
+- [ ] `example.py`、`long_context_example.py`、`mem_spd_test.py` 至少各成功运行一次（待 GPU）；
+- [ ] LongBench smoke 能完成预测与评分（待 GPU）；
+- [ ] 已记录环境版本、KIVI 参数与 Llama 路径限制清单（固定参数与限制清单已完成，环境数值待 GPU 填写，见 `docs/m0_llama_baseline.md`）。
 
 模型策略：
 
-- [ ] 已与用户确认 L1：M1–M5 使用 Llama-3.1-8B，Qwen2.5 后置到 M5.5；
-- [ ] 有书面选型记录，包含 Qwen 的角色、Go/No-Go 与降级方案；
-- [ ] M0 未引入任何 Qwen 专用代码或配置。
+- [x] 已与用户确认 L1：M1–M5 使用 Llama-3.1-8B，Qwen2.5 后置到 M5.5；
+- [x] 有书面选型记录，包含 Qwen 的角色、Go/No-Go 与降级方案（`docs/m0_llama_baseline.md`）；
+- [x] M0 未引入任何 Qwen 专用代码或配置（已 grep 确认）。
 
 基线冻结：
 
-- [ ] FP16/BF16 与 KIVI 2-bit（可选 4-bit）baseline 记录完整；
-- [ ] 同配置重复运行至少 3 次，波动可解释；
-- [ ] 失败 run 也落盘并保留错误原因；
-- [ ] 主模型与主量化配置已明确，后续实验不随意改变。
+- [ ] FP16/BF16 与 KIVI 2-bit（可选 4-bit）baseline 记录完整（待 GPU）；
+- [ ] 同配置重复运行至少 3 次，波动可解释（待 GPU）；
+- [ ] 失败 run 也落盘并保留错误原因（`scripts/m0_baseline.py run` 已支持，待实际运行）；
+- [x] 主模型与主量化配置已明确，后续实验不随意改变（L1 + KIVI 2/2/32/128，见 `docs/m0_llama_baseline.md`）。
 
 ### M0 当前实施状态
 
-**未开始。** 进度已于 2026-11-21 重置：当前 checkout 为上游 KIVI 主干（Llama / Mistral 路径）。M0 只做 Llama 基线跑通与模型策略确认，不接入 Qwen。
+**进行中：非 GPU 部分已完成，GPU 验证与基线运行待执行。** 2026-11-22 更新：
 
-- M0.1 Llama 原始项目跑通：未开始；
-- M0.2 模型策略确认：未开始，等待与用户确认 L1；
-- M0.3 基线冻结：未开始。
+- M0.1 Llama 原始项目跑通：
+  - ✅ 静态检查 `python -m compileall models quant utils metrics.py` 通过（macOS / CPU-only 环境）；
+  - ✅ 模型配置补齐：`config/model2maxlen.json` 增加 `Llama-3.1-8B-Instruct` / `Meta-Llama-3.1-8B-Instruct`（120000），`config/model2path.json` 增加对应别名；
+  - ✅ 基线记录工具 `scripts/m0_baseline.py`（`check` / `env` / `run`）；
+  - ⏳ CUDA 算子编译、`quant/gemv.py`、`example.py`、`long_context_example.py`、`mem_spd_test.py`、LongBench smoke 待 GPU 机器执行。
+- M0.2 模型策略确认：✅ 已与用户确认 **L1**；书面选型记录见 `docs/m0_llama_baseline.md`；M0 未引入任何 Qwen 代码/配置（已 grep 确认）。
+- M0.3 基线冻结：⏳ 记录脚本与模板就绪；FP16 / KIVI-2 / KIVI-4 的 3 次重复运行待 GPU 执行。
+
+非 GPU 环境说明：当前开发机为 macOS、无 NVIDIA GPU、CPU-only torch 2.15，项目依赖（transformers / datasets / modelscope / triton / flash-attn）未安装，因此 GPU 项无法在本机完成。
 
 ### M0 验证命令
 
-静态检查：
+非 GPU 部分（当前机器可执行）：
 
 ```bash
+# 静态检查
 python -m compileall models quant utils metrics.py
+
+# 固定量化配置校验（residual_length 必须是 group_size 的整数倍）
+python scripts/m0_baseline.py check \
+    --k-bits 2 --v-bits 2 --group-size 32 --residual-length 128
+
+# 环境 / 版本 / git 状态记录（GPU 机器上执行，结果补入 docs/m0_llama_baseline.md）
+python scripts/m0_baseline.py env --out results/m0_baselines/env.json
 ```
 
 Llama 原始项目示例链路（需要 GPU 与已下载模型）：
@@ -200,11 +214,21 @@ python long_context_example.py
 python mem_spd_test.py
 ```
 
-LongBench smoke（先用 Llama-2-7b 验证链路；Llama-3.1 需先在 `config/model2maxlen.json` 补条目）：
+LongBench smoke（先用 Llama-2-7b 验证链路；Llama-3.1 的 maxlen 已补为 120000）：
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 meta-llama/Llama-2-7b-hf
-python eval_long_bench.py --model Llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
+
+bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
+python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_120000_2bits_group32_residual128
+```
+
+基线重复运行（成功与失败都会落盘，详细矩阵见 `docs/m0_llama_baseline.md`）：
+
+```bash
+python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
 ```
 
 CUDA 算子自测：
@@ -214,7 +238,7 @@ python quant/gemv.py
 cd quant && python test.py
 ```
 
-当前验证状态：**未开始**。执行后在本节记录实际结果、环境版本与遇到的问题。
+当前验证状态（2026-11-22）：静态检查通过；`m0_baseline.py check` 对冻结配置返回 `ok: true`、对 `residual_length=100, group_size=32` 正确报错。CUDA、示例、LongBench 与基线重复运行均待 GPU 执行，结果将补入 `docs/m0_llama_baseline.md`。
 
 ---
 

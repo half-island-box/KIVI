@@ -4,7 +4,7 @@
 
 [English](README.md) | 简体中文
 
-> **项目状态（2026-11-21）：** SinkBudget 是 [KIVI](https://github.com/jy-yuan/KIVI) 的研究型 fork。上游 KIVI 基线当前可以运行；sink 相关的研究模块**尚未实现**。当前里程碑是 **M0**：先把原始项目完整跑通，并确认 **Llama-first** 模型策略（Qwen2.5 后置到 M5.5）。分阶段计划见 [roadmap](docs/kv_cache_sink_protection_roadmap.md)。
+> **项目状态（2026-11-22）：** SinkBudget 是 [KIVI](https://github.com/jy-yuan/KIVI) 的研究型 fork。上游 KIVI 基线当前可以运行；sink 相关的研究模块**尚未实现**。里程碑 **M0** 进行中：已确认 **Llama-first（L1）** 策略，Llama 模型配置与基线记录工具已就绪，静态检查通过；CUDA 编译、示例与基线重复运行仍需在 NVIDIA GPU 机器上执行。分阶段计划见 [roadmap](docs/kv_cache_sink_protection_roadmap.md)，M0 记录见 [M0 Llama 基线记录](docs/m0_llama_baseline.md)。
 
 ## 项目概述
 
@@ -51,7 +51,7 @@ KIVI 将 Key Cache 按通道量化、Value Cache 按 token 量化到 2/4 bit，�
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| M0 | 跑通原始 KIVI 项目；确认新测试模型；冻结基线 | 未开始 |
+| M0 | 跑通原始 KIVI 项目；确认新测试模型；冻结基线 | 进行中 —— 非 GPU 部分完成，GPU 运行待执行 |
 | M1 | Attention 统计与 sink 分数原型 | 未开始 |
 | M2 | Fake-quant 保护与层间预算分配 | 未开始 |
 | M3 | 主 baseline 矩阵与长上下文精度实验 | 未开始 |
@@ -60,7 +60,7 @@ KIVI 将 Key Cache 按通道量化、Value Cache 按 token 量化到 2/4 bit，�
 | M6 | 效率系统化与 kernel 原型 | 未开始 |
 | M7 | 消融、论文与复现包 | 未开始 |
 
-当前重点是 M0.1（验证基线项目：环境、CUDA 扩展、示例脚本、LongBench）与 M0.2（与用户确认模型策略：M1–M5 使用 Llama-3.1-8B，Qwen2.5 在 M5.5 移植）。在此之前，上游 KIVI 实现是唯一可执行的基线。
+M0.2 已确定：与用户确认 **L1** —— M1–M5 使用 `Llama-3.1-8B-Instruct`，`Llama-2-7b-hf` 作为 MHA 回归模型，Qwen2.5 后置到 M5.5。M0.1/M0.3 部分完成：静态检查通过，Llama 配置与 `scripts/m0_baseline.py` 已就绪；CUDA 扩展、示例脚本、LongBench smoke 与 3 次重复基线仍待 GPU 机器执行。在此之前，上游 KIVI 实现是唯一可执行的基线。
 
 ## 当前可运行的基线：KIVI
 
@@ -87,9 +87,12 @@ pip install -e .
 
 # 编译 KIVI CUDA 扩展 kivi_gemv（量化 cache 路径必需）。
 # 需要 NVIDIA GPU、与 torch 匹配的 CUDA toolkit，且 nvcc 在 PATH 中。
+# 必须加 --no-build-isolation：quant/setup.py 会 import torch，
+# 而 pip 的隔离构建环境只有 setuptools，否则会报
+# ModuleNotFoundError: No module named 'torch'。
 # 修改 quant/csrc/ 后必须重新执行。
 cd quant
-pip install -e .
+pip install -e . --no-build-isolation
 cd ..
 ```
 
@@ -160,6 +163,25 @@ python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
 
 `scripts/long_test.sh` 的参数顺序是 `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`。`MODEL_SOURCE` 默认为 `modelscope`；传 `hf` 可使用 `meta-llama/Llama-2-7b-hf` 这类 HF 模型 id。预测结果写入 `pred/`，再由 `eval_long_bench.py` 评分。数据集与 prompt 配置位于 `config/`。
 
+### M0 基线记录
+
+M0 的记录框架已就绪；GPU 相关运行仍需在 NVIDIA GPU 机器上执行：
+
+```bash
+# 无需 GPU：校验冻结的 KIVI 配置
+python scripts/m0_baseline.py check \
+    --k-bits 2 --v-bits 2 --group-size 32 --residual-length 128
+
+# 记录 GPU / CUDA / PyTorch / Transformers / git 元数据
+python scripts/m0_baseline.py env --out results/m0_baselines/env.json
+
+# 重复 3 次；成功与失败尝试都会落盘
+python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
+    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+```
+
+原始记录写入 `results/m0_baselines/`（已被 git 忽略）。整理后的状态、固定 KIVI 配置、L1 选型记录与 GPU TODO 清单见 [M0 Llama 基线记录](docs/m0_llama_baseline.md)。
+
 ## 仓库结构
 
 ```text
@@ -167,7 +189,7 @@ models/        Llama 与 Mistral 的 KIVI 实现（*_kivi.py）
 quant/         Triton 量化/打包 + CUDA 扩展（kivi_gemv）
 utils/         参数解析与数据工具
 config/        模型路径、最大长度与 LongBench prompt
-scripts/       long_test.sh
+scripts/       long_test.sh、m0_baseline.py
 docs/          研究方案、路线图、代码链路分析与 LongBench 结果
 example.py, long_context_example.py, mem_spd_test.py
 pred_long_bench.py, eval_long_bench.py, metrics.py
@@ -187,6 +209,7 @@ pred_long_bench.py, eval_long_bench.py, metrics.py
 
 - [研究方案](docs/KV%20Cache量化优化.md) —— 问题、方法、baseline、消融与风险。
 - [工程路线图](docs/kv_cache_sink_protection_roadmap.md) —— M0–M7 的任务、交付物、验收标准与验证命令。
+- [M0 Llama 基线记录](docs/m0_llama_baseline.md) —— L1 选型、固定 KIVI 配置、环境模板与 GPU TODO。
 - [代码链路分析](docs/KIVI_项目结构与代码链路分析.md) —— cache 状态机、kernel 布局与扩展点。
 - [LongBench 结果](docs/long_bench.md) —— 上游 KIVI 在 LongChat 与 Mistral 上的结果。
 
