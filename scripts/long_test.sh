@@ -1,4 +1,4 @@
-# model e.g.: LLM-Research/llama-2-7b-hf (ModelScope, default) or meta-llama/Llama-2-7b-hf (hf)
+# model e.g.: modelscope/Llama-2-7b-ms (ModelScope, default) or meta-llama/Llama-2-7b-hf (hf)
 
 gpuid=$1
 k_bits=$2

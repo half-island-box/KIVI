@@ -69,6 +69,7 @@ M0.2 已确定：与用户确认 **L1** —— M1–M5 使用 `Llama-3.1-8B-Inst
 - 模型：Llama-2 / Llama-3 系列（含 GQA），以及 Mistral / LongChat。
 - 量化：`k_bits` / `v_bits` 取 2 或 4，可配置 `group_size`，并保留 `residual_length` 个最近 FP token。
 - 路径：PyTorch eager attention 与 FlashAttention 两条路径。KIVI 要求 `config.use_flash = True`；Llama eager 路径只支持 MHA，GQA 模型必须走 flash 路径。
+- Tokenizer：Llama-3.x 使用 fast BPE tokenizer（`tokenizer.json`）；Llama-2 / LongChat 保持 slow。`utils/tokenizer_utils.py` 负责选择，因为 Llama-3.x 根目录只有 `original/tokenizer.model`，强制 `use_fast=False` 会报 `TypeError: not a string`。
 - Kernel：`quant/new_pack.py` 的 Triton 量化/打包，以及 `quant/` 下融合反量化与 GEMV 的 CUDA 扩展 `kivi_gemv`。
 
 关于 cache 状态机、kernel 布局与二次开发扩展点的详细说明，见 [KIVI 项目结构与代码链路分析](docs/KIVI_项目结构与代码链路分析.md)。
@@ -157,11 +158,11 @@ python example.py --model_source hf --model_name_or_path meta-llama/Llama-3.1-8B
 ### LongBench
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
-python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
+python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 ```
 
-`scripts/long_test.sh` 的参数顺序是 `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`。`MODEL_SOURCE` 默认为 `modelscope`；传 `hf` 可使用 `meta-llama/Llama-2-7b-hf` 这类 HF 模型 id。预测结果写入 `pred/`，再由 `eval_long_bench.py` 评分。数据集与 prompt 配置位于 `config/`。
+`scripts/long_test.sh` 的参数顺序是 `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`。`MODEL_SOURCE` 默认为 `modelscope`（Llama-2 base 的 ModelScope id 为 `modelscope/Llama-2-7b-ms`）；传 `hf` 可使用 `meta-llama/Llama-2-7b-hf` 这类 HF 模型 id。预测结果写入 `pred/`，再由 `eval_long_bench.py` 评分。数据集与 prompt 配置位于 `config/`。
 
 ### M0 基线记录
 
@@ -177,7 +178,7 @@ python scripts/m0_baseline.py env --out results/m0_baselines/env.json
 
 # 重复 3 次；成功与失败尝试都会落盘
 python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 ```
 
 原始记录写入 `results/m0_baselines/`（已被 git 忽略）。整理后的状态、固定 KIVI 配置、L1 选型记录与 GPU TODO 清单见 [M0 Llama 基线记录](docs/m0_llama_baseline.md)。

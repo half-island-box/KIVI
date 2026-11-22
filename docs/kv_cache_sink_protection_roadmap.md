@@ -108,7 +108,8 @@ Stage E: 可系统化
 6. 整理 Llama 路径限制清单：
    - eager 路径仅支持 MHA，GQA 必须走 flash 路径；
    - 推理路径强制 `config.use_flash=True`；
-   - 依赖固定在 `transformers==4.43.x`。
+   - 依赖固定在 `transformers==4.43.x`；
+   - Llama-3.x 必须使用 fast tokenizer（根目录只有 `original/tokenizer.model`，slow 路径会报 `TypeError: not a string`）。
 
 #### M0.2 确认模型策略（Llama-first，Qwen 后置）
 
@@ -182,7 +183,8 @@ Llama 原始项目跑通：
 
 - M0.1 Llama 原始项目跑通：
   - ✅ 静态检查 `python -m compileall models quant utils metrics.py` 通过（macOS / CPU-only 环境）；
-  - ✅ 模型配置补齐：`config/model2maxlen.json` 增加 `Llama-3.1-8B-Instruct` / `Meta-Llama-3.1-8B-Instruct`（120000），`config/model2path.json` 增加对应别名；
+  - ✅ 模型配置补齐：`config/model2maxlen.json` 增加 `Llama-3.1-8B-Instruct` / `Meta-Llama-3.1-8B-Instruct`（120000）与 `Llama-2-7b-ms`（4096），`config/model2path.json` 增加对应别名；
+  - ✅ 兼容性修复：Llama-2 默认 ModelScope id 改为 `modelscope/Llama-2-7b-ms`（原 `LLM-Research/llama-2-7b-hf` 不存在）；Llama-3.x 改走 fast tokenizer（`utils/tokenizer_utils.py`），避免 slow tokenizer 在无根目录 `tokenizer.model` 时报 `TypeError: not a string`；
   - ✅ 基线记录工具 `scripts/m0_baseline.py`（`check` / `env` / `run`）；
   - ⏳ CUDA 算子编译、`quant/gemv.py`、`example.py`、`long_context_example.py`、`mem_spd_test.py`、LongBench smoke 待 GPU 机器执行。
 - M0.2 模型策略确认：✅ 已与用户确认 **L1**；书面选型记录见 `docs/m0_llama_baseline.md`；M0 未引入任何 Qwen 代码/配置（已 grep 确认）。
@@ -256,8 +258,8 @@ python mem_spd_test.py
 #### 5. LongBench smoke（先 Llama-2-7b，再 Llama-3.1-8B）
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
-python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
+python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 
 bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
 python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_120000_2bits_group32_residual128
@@ -267,15 +269,15 @@ python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_120000_2bits_group3
 
 成功与失败尝试都由 `scripts/m0_baseline.py run` 落盘到 `results/m0_baselines/`。
 
-Llama-2-7b-hf：
+Llama-2-7b-ms（ModelScope 默认；HF 等价 `meta-llama/Llama-2-7b-hf`）：
 
 ```bash
 python scripts/m0_baseline.py run --name llama2_fp16_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 16 16 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 16 16 32 128 modelscope/Llama-2-7b-ms
 python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 python scripts/m0_baseline.py run --name llama2_kivi4_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 4 4 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 4 4 32 128 modelscope/Llama-2-7b-ms
 ```
 
 Llama-3.1-8B-Instruct：
@@ -293,9 +295,9 @@ python scripts/m0_baseline.py run --name llama31_kivi4_longbench --repeat 3 -- \
 
 ```bash
 python scripts/m0_baseline.py run --name llama2_kivi2_r1 --repeat 1 -- \
-    bash -c 'bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf && \
-             python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128 && \
-             cp pred/llama-2-7b-hf_4096_2bits_group32_residual128/result.json \
+    bash -c 'bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms && \
+             python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128 && \
+             cp pred/Llama-2-7b-ms_4096_2bits_group32_residual128/result.json \
                 results/m0_baselines/llama2_kivi2_r1_result.json'
 ```
 

@@ -17,6 +17,7 @@
 | M0 未引入 Qwen 代码 | 已验证 | 仓库内 `*.py` / `*.json` / `*.sh` 无 `qwen` 引用 |
 | 静态检查 | 已通过 | `python -m compileall models quant utils metrics.py`（2026-11-22，macOS / CPU-only） |
 | Llama 模型配置 | 已完成 | `config/model2maxlen.json`、`config/model2path.json` 已补 Llama-3.1-8B 与 Llama-2-7b |
+| Llama 兼容性修复 | 已完成 | Llama-2 默认 id 改为 `modelscope/Llama-2-7b-ms`；Llama-3.x 使用 fast tokenizer（`utils/tokenizer_utils.py`） |
 | 基线记录工具 | 已完成 | `scripts/m0_baseline.py`（`check` / `env` / `run`） |
 | CUDA 算子编译与自测 | 待 GPU | `cd quant && pip install -e . --no-build-isolation`、`python quant/gemv.py` |
 | 示例链路 | 待 GPU | `example.py`、`long_context_example.py`、`mem_spd_test.py` |
@@ -34,11 +35,11 @@
 | 角色 | 模型 | 用途 | 进入阶段 |
 |---|---|---|---|
 | 开发宿主 | `meta-llama/Llama-3.1-8B-Instruct` | M1–M5 全部创新模块、GQA、长上下文 | M0.1 |
-| MHA 回归 | `meta-llama/Llama-2-7b-hf` | MHA 路径回归、LongBench 兼容 | M0.1 |
+| MHA 回归 | `meta-llama/Llama-2-7b-hf`（ModelScope: `modelscope/Llama-2-7b-ms`） | MHA 路径回归、LongBench 兼容 | M0.1 |
 | Qwen 移植开发 | `Qwen/Qwen2.5-1.5B-Instruct` | 移植正确性、低成本复跑 | M5.5 |
 | 最终主模型候选 | `Qwen/Qwen2.5-7B-Instruct` | 论文主表、M3/M4/M5 复跑 | M5.5 |
 
-模型来源默认走 ModelScope：`LLM-Research/Meta-Llama-3.1-8B-Instruct`、`LLM-Research/llama-2-7b-hf`；传 `--model_source hf` 时使用上表的 HF id。同一模型比较必须固定 revision、tokenizer 与生成参数。
+模型来源默认走 ModelScope：`LLM-Research/Meta-Llama-3.1-8B-Instruct`、`modelscope/Llama-2-7b-ms`；传 `--model_source hf` 时使用上表的 HF id（Llama-2 为 `meta-llama/Llama-2-7b-hf`）。同一模型比较必须固定 revision、tokenizer 与生成参数。
 
 ### 2.2 待填写：revision 与 tokenizer
 
@@ -47,7 +48,7 @@
 | 模型 | 来源 | revision / commit hash | tokenizer 配置 | chat template hash |
 |---|---|---|---|---|
 | Llama-3.1-8B-Instruct | ModelScope / HF | 待填写 | 待填写 | 待填写 |
-| Llama-2-7b-hf | ModelScope / HF | 待填写 | 待填写 | 不适用（原始 prompt） |
+| Llama-2-7b-ms (ModelScope) / Llama-2-7b-hf (HF) | ModelScope / HF | 待填写 | 待填写 | 不适用（原始 prompt） |
 
 `config.json` 中的 `_commit_hash` 或 `snapshot_download` 返回目录可作为 revision 记录；chat template hash 用 `hashlib.sha256(tokenizer.chat_template.encode()).hexdigest()`。
 
@@ -154,8 +155,8 @@ python mem_spd_test.py          # 默认 Llama-2-7b，耗时与 peak memory
 先用 Llama-2-7b 验证预测与评分链路：
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
-python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
+python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 ```
 
 再跑 Llama-3.1-8B-Instruct：
@@ -177,20 +178,20 @@ python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_120000_2bits_group3
 
 对每个模型 × 量化配置重复 3 次。用 `scripts/m0_baseline.py run` 执行，所有成功/失败尝试都会落盘。
 
-### 6.1 Llama-2-7b-hf
+### 6.1 Llama-2-7b-ms（ModelScope 默认）
 
 ```bash
 # FP16
 python scripts/m0_baseline.py run --name llama2_fp16_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 16 16 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 16 16 32 128 modelscope/Llama-2-7b-ms
 
 # KIVI-2bit
 python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 
 # KIVI-4bit（可选）
 python scripts/m0_baseline.py run --name llama2_kivi4_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 4 4 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 4 4 32 128 modelscope/Llama-2-7b-ms
 ```
 
 ### 6.2 Llama-3.1-8B-Instruct
@@ -213,9 +214,9 @@ python scripts/m0_baseline.py run --name llama31_kivi4_longbench --repeat 3 -- \
 
 ```bash
 python scripts/m0_baseline.py run --name llama2_kivi2_longbench_r1 --repeat 1 -- \
-    bash -c 'bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf && \
-             python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128 && \
-             cp pred/llama-2-7b-hf_4096_2bits_group32_residual128/result.json \
+    bash -c 'bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms && \
+             python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128 && \
+             cp pred/Llama-2-7b-ms_4096_2bits_group32_residual128/result.json \
                 results/m0_baselines/llama2_kivi2_r1_result.json'
 ```
 
@@ -223,9 +224,9 @@ python scripts/m0_baseline.py run --name llama2_kivi2_longbench_r1 --repeat 1 --
 
 | 模型 | 配置 | run 1 | run 2 | run 3 | 均值 / 波动 | 备注 |
 |---|---|---|---|---|---|---|
-| Llama-2-7b-hf | FP16 | 待填写 | 待填写 | 待填写 | 待填写 | |
-| Llama-2-7b-hf | KIVI-2bit | 待填写 | 待填写 | 待填写 | 待填写 | |
-| Llama-2-7b-hf | KIVI-4bit | 待填写 | 待填写 | 待填写 | 待填写 | 可选 |
+| Llama-2-7b-ms | FP16 | 待填写 | 待填写 | 待填写 | 待填写 | |
+| Llama-2-7b-ms | KIVI-2bit | 待填写 | 待填写 | 待填写 | 待填写 | |
+| Llama-2-7b-ms | KIVI-4bit | 待填写 | 待填写 | 待填写 | 待填写 | 可选 |
 | Llama-3.1-8B-Instruct | FP16 | 待填写 | 待填写 | 待填写 | 待填写 | |
 | Llama-3.1-8B-Instruct | KIVI-2bit | 待填写 | 待填写 | 待填写 | 待填写 | |
 | Llama-3.1-8B-Instruct | KIVI-4bit | 待填写 | 待填写 | 待填写 | 待填写 | 可选 |
@@ -243,7 +244,8 @@ python scripts/m0_baseline.py run --name llama2_kivi2_longbench_r1 --repeat 1 --
 5. **`residual_length` 必须是 `group_size` 的整数倍**（K 侧有断言）；冻结配置 128 / 32 满足。
 6. **cache 是 9 元组**：任何扩展都必须同步 `LlamaModel_KIVI.forward`、`prepare_inputs_for_generation`、`_reorder_cache` 及所有构造位置。
 7. **CUDA 扩展**：`kivi_gemv` 需在目标 GPU 机器上编译；修改 `quant/csrc/` 后必须重装 `cd quant && pip install -e . --no-build-isolation`。
-8. **模型来源**：默认 ModelScope；HF 需显式 `--model_source hf`。
+8. **模型来源**：默认 ModelScope；Llama-2 base 的 ModelScope id 为 `modelscope/Llama-2-7b-ms`，HF 需显式 `--model_source hf`。
+9. **Llama-3.x tokenizer**：必须使用 fast tokenizer。根目录只有 `original/tokenizer.model`，强制 `use_fast=False` 会报 `TypeError: not a string`；入口统一走 `utils/tokenizer_utils.py`，Llama-2 / LongChat 仍用 slow。
 
 ---
 
@@ -288,3 +290,11 @@ python scripts/m0_baseline.py run --name llama2_kivi2_longbench_r1 --repeat 1 --
 2. 先用 Llama-2-7b 完成 LongBench smoke，再跑 Llama-3.1-8B；
 3. 按第 6 节完成 FP16 / KIVI-2 / KIVI-4 的 3 次重复，把结果补回第 4、6 节；
 4. M0 全部验收通过后，在 roadmap 中把 M0 标记完成，并开始 M1（attention 统计与 sink 分数原型）。
+
+---
+
+## 11. 2026-11-22 兼容性修复记录
+
+- **Llama-2 ModelScope id**：原 `LLM-Research/llama-2-7b-hf` 在 ModelScope 上不存在（API 404），默认改为 `modelscope/Llama-2-7b-ms`；`config/model2maxlen.json` 增加 `Llama-2-7b-ms` / `llama-2-7b-ms`（4096）。
+- **Llama-3.x tokenizer**：`use_fast=False` 会实例化 slow `LlamaTokenizer`，而 Llama-3.1 根目录没有 `tokenizer.model`，导致 `sentencepiece.Load(None)` 报 `TypeError: not a string`。新增 `utils/tokenizer_utils.py`：Llama-3.x 用 fast tokenizer，Llama-2 / LongChat 保持 slow；`pred_long_bench.py`、`example.py`、`long_context_example.py`、`mem_spd_test.py` 统一走该入口。
+- **命令与目录名**：所有 LongBench 命令、`pred/` 目录名与 `eval_long_bench.py --model` 参数已同步为 `modelscope/Llama-2-7b-ms` / `Llama-2-7b-ms_...`。

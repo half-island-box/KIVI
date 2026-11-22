@@ -69,6 +69,7 @@ This repository currently contains the upstream KIVI implementation:
 - Models: Llama-2 / Llama-3 family (including GQA) and Mistral / LongChat.
 - Quantization: `k_bits` / `v_bits` in {2, 4}, configurable `group_size`, and a recent FP window of `residual_length` tokens.
 - Paths: a PyTorch eager attention path and a FlashAttention path. KIVI requires `config.use_flash = True`; the eager Llama path only supports MHA, so GQA models must use the flash path.
+- Tokenizers: Llama-3.x uses the fast BPE tokenizer (`tokenizer.json`); Llama-2 / LongChat keep the slow tokenizer. `utils/tokenizer_utils.py` selects the implementation, because Llama-3.x only ships `original/tokenizer.model`, so forcing `use_fast=False` fails with `TypeError: not a string`.
 - Kernels: Triton quantization/packing in `quant/new_pack.py` and the fused dequant + GEMV CUDA extension `kivi_gemv` in `quant/`.
 
 For an in-depth walkthrough of the cache state machine, kernel layout, and extension points, see [KIVI 项目结构与代码链路分析](docs/KIVI_项目结构与代码链路分析.md) (Chinese).
@@ -160,11 +161,11 @@ python example.py --model_source hf --model_name_or_path meta-llama/Llama-3.1-8B
 ### LongBench
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
-python eval_long_bench.py --model llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
+python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 ```
 
-`scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`. `MODEL_SOURCE` defaults to `modelscope`; pass `hf` to use a Hugging Face id such as `meta-llama/Llama-2-7b-hf`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
+`scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`. `MODEL_SOURCE` defaults to `modelscope` (the Llama-2 base model is published as `modelscope/Llama-2-7b-ms`); pass `hf` to use a Hugging Face id such as `meta-llama/Llama-2-7b-hf`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
 
 ### M0 baseline records
 
@@ -180,7 +181,7 @@ python scripts/m0_baseline.py env --out results/m0_baselines/env.json
 
 # Repeat a baseline three times; successes and failures are both persisted
 python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
-    bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+    bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 ```
 
 Raw records land in `results/m0_baselines/` (git-ignored). The curated status, fixed KIVI configuration, L1 model-selection record, and the GPU TODO list live in the [M0 Llama baseline record](docs/m0_llama_baseline.md) (Chinese).

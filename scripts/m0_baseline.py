@@ -28,7 +28,7 @@ Record the environment on the GPU host::
 Run a LongBench smoke three times, persisting failures::
 
     python scripts/m0_baseline.py run --name longbench_llama2_kivi2 --repeat 3 -- \
-        bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/llama-2-7b-hf
+        bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 
 Raw records land under ``results/m0_baselines/`` (ignored by git); summarize
 the runs into ``docs/m0_llama_baseline.md`` before committing.

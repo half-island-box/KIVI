@@ -807,8 +807,8 @@ python long_context_example.py
 python mem_spd_test.py
 
 # 5. LongBench 预测 + 打分
-bash scripts/long_test.sh 0 2 2 32 128 meta-llama/Llama-2-7b-hf
-python eval_long_bench.py --model Llama-2-7b-hf_4096_2bits_group32_residual128
+bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
+python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 ```
 
 关键超参：
