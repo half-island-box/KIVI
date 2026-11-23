@@ -186,6 +186,7 @@ Llama 原始项目跑通：
   - ✅ 模型配置补齐：`config/model2maxlen.json` 增加 `Llama-3.1-8B-Instruct` / `Meta-Llama-3.1-8B-Instruct`（120000）与 `Llama-2-7b-ms`（4096），`config/model2path.json` 增加对应别名；
   - ✅ 兼容性修复：Llama-2 默认 ModelScope id 改为 `modelscope/Llama-2-7b-ms`（原 `LLM-Research/llama-2-7b-hf` 不存在）；Llama-3.x 改走 fast tokenizer（`utils/tokenizer_utils.py`），避免 slow tokenizer 在无根目录 `tokenizer.model` 时报 `TypeError: not a string`；
   - ✅ 基线记录工具 `scripts/m0_baseline.py`（`check` / `env` / `run`）；
+  - ✅ 数据集本地优先 + ModelScope：`utils/modelscope_hub.py` 新增 `load_long_bench_task` / `load_gsm8k_split`。下载前依次检查 `--data_dir`（或 `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`）、`<cache_dir>/longbench/data` 与 `<cache_dir>/gsm8k` 的已解压副本、本机 ModelScope snapshot；都没有才下载 LongBench `ZhipuAI/LongBench` 的 `data.zip`（约 114 MB）或 `modelscope/gsm8k` 声明的 jsonl。`pred_long_bench.py` / `example.py` 不再访问 `huggingface.co`（`--data_source hf` 仍可显式切回）；
   - ⏳ CUDA 算子编译、`quant/gemv.py`、`example.py`、`long_context_example.py`、`mem_spd_test.py`、LongBench smoke 待 GPU 机器执行。
 - M0.2 模型策略确认：✅ 已与用户确认 **L1**；书面选型记录见 `docs/m0_llama_baseline.md`；M0 未引入任何 Qwen 代码/配置（已 grep 确认）。
 - M0.3 基线冻结：⏳ 记录脚本与模板就绪；FP16 / KIVI-2 / KIVI-4 的 3 次重复运行待 GPU 执行。
@@ -199,6 +200,14 @@ Llama 原始项目跑通：
 ```bash
 # 静态检查
 python -m compileall models quant utils metrics.py
+
+# 数据集加载：本地优先，缺失时才从 ModelScope 下载（无 GPU 即可验证）
+# 第二次执行应只打印 loading ...，不再出现 downloading
+python - <<'PY'
+from utils.modelscope_hub import load_long_bench_task, load_gsm8k_split
+print(len(load_long_bench_task("qasper", cache_dir="./cached_models")))
+print(len(load_gsm8k_split("test", cache_dir="./cached_models")))
+PY
 
 # 固定量化配置校验（residual_length 必须是 group_size 的整数倍）
 python scripts/m0_baseline.py check \

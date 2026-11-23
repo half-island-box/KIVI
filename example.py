@@ -6,14 +6,19 @@ import torch
 import random
 from models.llama_kivi import LlamaForCausalLM_KIVI
 from transformers import LlamaConfig
-from datasets import load_dataset
-from utils.modelscope_hub import add_model_source_argument, resolve_model_path
+from utils.modelscope_hub import (
+    add_model_source_argument,
+    load_gsm8k_split,
+    resolve_model_path,
+)
 from utils.tokenizer_utils import load_llama_tokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name_or_path", type=str,
                     default="LLM-Research/Meta-Llama-3.1-8B-Instruct")
 parser.add_argument("--cache_dir", type=str, default=None)
+parser.add_argument("--data_dir", type=str, default=None,
+                    help="Local GSM8K directory; reused instead of downloading.")
 add_model_source_argument(parser)
 args = parser.parse_args()
 
@@ -45,7 +50,7 @@ model = LlamaForCausalLM_KIVI.from_pretrained(
 
 enc = load_llama_tokenizer(model_path, args.model_name_or_path)
 
-dataset = load_dataset('gsm8k', 'main')
+dataset = {"train": load_gsm8k_split("train", args.model_source, args.data_dir, args.cache_dir)}
 
 prompt = ''
 for i in range(5):

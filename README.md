@@ -97,10 +97,15 @@ pip install -e . --no-build-isolation
 cd ..
 ```
 
-Models are fetched from **ModelScope by default**. Pass `--model_source hf` (or `model_source="hf"` when calling `utils.modelscope_hub.resolve_model_path`) to load from Hugging Face Hub instead; model ids must be valid on the selected source. LongBench/GSM8K dataset loading still goes through Hugging Face `datasets` for now, which means it needs network access to `huggingface.co`:
+Models are fetched from **ModelScope by default**. Pass `--model_source hf` (or `model_source="hf"` when calling `utils.modelscope_hub.resolve_model_path`) to load from Hugging Face Hub instead; model ids must be valid on the selected source.
 
-- unreachable network: the download fails with `MaxRetryError(... huggingface.co ...)` / `[Errno 101] Network is unreachable`. Point the client at a mirror with `export HF_ENDPOINT=https://hf-mirror.com`, or pre-download the dataset on a networked machine and run offline via `export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1` (optionally `HF_DATASETS_CACHE=<dir>`).
-- Moving dataset loading to ModelScope is tracked under M0 in the roadmap.
+Benchmark data follows the same rule (`--data_source hf` opts into Hugging Face; leaving it unset means "follow `--model_source`"). **Every loader checks the machine before downloading**, in this order:
+
+1. an explicit directory: `--data_dir`, or `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`, holding `data/*.jsonl` or `data.zip`;
+2. an already-extracted copy under the cache dir: `<cache_dir>/longbench/data/`, `<cache_dir>/gsm8k/`;
+3. an existing ModelScope snapshot on the machine (for example `~/.cache/modelscope/hub/datasets/ZhipuAI/LongBench`).
+
+Only when none of these exist does it download: LongBench's `data.zip` (~114 MB) from the ModelScope dataset `ZhipuAI/LongBench`, and the GSM8K split jsonl files declared by `modelscope/gsm8k`. `scripts/long_test.sh` passes `--cache_dir ./cached_models`, so extracted data lands there. Nothing is fetched from `huggingface.co` on the default path; the same local-first check applies to model weights (`--cache_dir`, `cached_models/`, the ModelScope cache), so a second run never re-downloads.
 
 ## Quick start
 
@@ -165,7 +170,17 @@ bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 ```
 
-`scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`. `MODEL_SOURCE` defaults to `modelscope` (the Llama-2 base model is published as `modelscope/Llama-2-7b-ms`); pass `hf` to use a Hugging Face id such as `meta-llama/Llama-2-7b-hf`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
+`scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE] [DATA_DIR]`. `MODEL_SOURCE` defaults to `modelscope` (the Llama-2 base model is published as `modelscope/Llama-2-7b-ms`); pass `hf` to use a Hugging Face id such as `meta-llama/Llama-2-7b-hf`. The optional `DATA_DIR` is forwarded as `--data_dir`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
+
+LongBench data is downloaded once from ModelScope and extracted under `./cached_models/longbench/`. To reuse data that is already on the machine (for example a copy synced from another host), point the loader at it instead:
+
+```bash
+python pred_long_bench.py --model_name_or_path modelscope/Llama-2-7b-ms \
+    --cache_dir ./cached_models --data_dir /path/to/longbench \
+    --k_bits 2 --v_bits 2 --group_size 32 --residual_length 128
+```
+
+`--data_dir` may hold `data/*.jsonl`, `data.zip`, or `{task}.jsonl` directly; nothing is downloaded when the requested task file is found. Add `--data_source hf` only if you deliberately want the Hugging Face `THUDM/LongBench` copy (this needs HF network access).
 
 ### M0 baseline records
 

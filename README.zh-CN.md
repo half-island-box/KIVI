@@ -97,7 +97,15 @@ pip install -e . --no-build-isolation
 cd ..
 ```
 
-模型默认从 **ModelScope** 拉取。传 `--model_source hf`（或在调用 `utils.modelscope_hub.resolve_model_path` 时传 `model_source="hf"`）可改回 Hugging Face Hub；模型 id 需要与所选源匹配。LongBench/GSM8K 等数据集目前仍走 Hugging Face `datasets`。
+模型默认从 **ModelScope** 拉取。传 `--model_source hf`（或在调用 `utils.modelscope_hub.resolve_model_path` 时传 `model_source="hf"`）可改回 Hugging Face Hub；模型 id 需要与所选源匹配。
+
+数据集遵循同一规则（`--data_source hf` 才走 Hugging Face；不填表示跟随 `--model_source`）。**所有 loader 在下载之前都会先检查本机**，顺序为：
+
+1. 显式目录：`--data_dir`，或环境变量 `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`，内含 `data/*.jsonl` 或 `data.zip`；
+2. 缓存目录里已解压的副本：`<cache_dir>/longbench/data/`、`<cache_dir>/gsm8k/`；
+3. 本机已有的 ModelScope snapshot（例如 `~/.cache/modelscope/hub/datasets/ZhipuAI/LongBench`）。
+
+三者都不存在时才会下载：LongBench 的 `data.zip`（约 114 MB，来自 ModelScope 数据集 `ZhipuAI/LongBench`），以及 `modelscope/gsm8k` 声明的各 split jsonl。`scripts/long_test.sh` 会传 `--cache_dir ./cached_models`，解压后的数据落在该目录下。默认路径不会访问 `huggingface.co`；模型权重同样先查 `--cache_dir`、`cached_models/` 与 ModelScope 缓存，重复运行不会重新下载。
 
 ## 快速开始
 
@@ -162,7 +170,17 @@ bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 ```
 
-`scripts/long_test.sh` 的参数顺序是 `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE]`。`MODEL_SOURCE` 默认为 `modelscope`（Llama-2 base 的 ModelScope id 为 `modelscope/Llama-2-7b-ms`）；传 `hf` 可使用 `meta-llama/Llama-2-7b-hf` 这类 HF 模型 id。预测结果写入 `pred/`，再由 `eval_long_bench.py` 评分。数据集与 prompt 配置位于 `config/`。
+`scripts/long_test.sh` 的参数顺序是 `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE] [DATA_DIR]`。`MODEL_SOURCE` 默认为 `modelscope`（Llama-2 base 的 ModelScope id 为 `modelscope/Llama-2-7b-ms`）；传 `hf` 可使用 `meta-llama/Llama-2-7b-hf` 这类 HF 模型 id；可选的 `DATA_DIR` 会转发为 `--data_dir`。预测结果写入 `pred/`，再由 `eval_long_bench.py` 评分。数据集与 prompt 配置位于 `config/`。
+
+LongBench 数据首次从 ModelScope 下载并解压到 `./cached_models/longbench/`。如果机器上已有数据（例如从其他机器同步过来的副本），直接指向它，不会触发下载：
+
+```bash
+python pred_long_bench.py --model_name_or_path modelscope/Llama-2-7b-ms \
+    --cache_dir ./cached_models --data_dir /path/to/longbench \
+    --k_bits 2 --v_bits 2 --group_size 32 --residual_length 128
+```
+
+`--data_dir` 可以是含 `data/*.jsonl`、`data.zip` 或直接 `{task}.jsonl` 的目录；只要找到目标任务文件就不会联网。只有显式传 `--data_source hf` 才会走 Hugging Face 的 `THUDM/LongBench`（需要 HF 网络）。
 
 ### M0 基线记录
 

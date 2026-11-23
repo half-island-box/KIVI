@@ -1,5 +1,4 @@
 import os
-from datasets import load_dataset
 import torch
 import json
 from tqdm import tqdm
@@ -9,7 +8,7 @@ import argparse
 os.environ["WANDB_DISABLED"] = "true"
 
 from utils.process_args import process_args
-from utils.modelscope_hub import resolve_model_path
+from utils.modelscope_hub import load_long_bench_task, resolve_model_path
 from utils.tokenizer_utils import load_llama_tokenizer
 from transformers import LlamaConfig, MistralConfig, AutoTokenizer
 
@@ -105,6 +104,7 @@ if __name__ == '__main__':
     # define your model
     model_args, data_args, training_args = process_args()
     # print(model_args, data_args, training_args)
+    data_source = data_args.data_source or model_args.model_source
     model_name = model_args.model_name_or_path.split("/")[-1]
     # Resolve the model id through the selected source (ModelScope by default).
     model_path = resolve_model_path(
@@ -207,12 +207,24 @@ if __name__ == '__main__':
         os.makedirs("pred_e")
     for dataset in datasets:
         if data_args.e:
-            data = load_dataset('THUDM/LongBench', f"{dataset}_e", split='test')
+            data = load_long_bench_task(
+                f"{dataset}_e",
+                split="test",
+                data_source=data_source,
+                data_dir=data_args.data_dir,
+                cache_dir=training_args.cache_dir,
+            )
             if not os.path.exists(f"pred_e/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}"):
                 os.makedirs(f"pred_e/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}")
             out_path = f"pred_e/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}/{dataset}.jsonl"
         else:
-            data = load_dataset('THUDM/LongBench', dataset, split='test')
+            data = load_long_bench_task(
+                dataset,
+                split="test",
+                data_source=data_source,
+                data_dir=data_args.data_dir,
+                cache_dir=training_args.cache_dir,
+            )
             if not os.path.exists(f"pred/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}"):
                 os.makedirs(f"pred/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}")
             out_path = f"pred/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}/{dataset}.jsonl"

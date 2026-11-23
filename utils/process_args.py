@@ -112,6 +112,20 @@ class DataArguments:
         default=False,
         metadata={"help": "Evaluate on LongBench-E."},
     )
+    data_source: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Where to fetch benchmark data: 'modelscope' (default) or 'hf'. "
+            "Unset means follow --model_source."
+        },
+    )
+    data_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Local directory holding the benchmark data (LongBench "
+            "data/*.jsonl or data.zip). Reused instead of downloading when present."
+        },
+    )
     use_our_imp: Optional[bool] = field(
         default=True,
         metadata={"help": "Whether to use our KV cache quantization implementation."},
