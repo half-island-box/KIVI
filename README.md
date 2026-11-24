@@ -79,21 +79,23 @@ For an in-depth walkthrough of the cache state machine, kernel layout, and exten
 Requirements: Python ≥ 3.10, an NVIDIA GPU, CUDA toolkit, and the dependencies pinned in `pyproject.toml` (`torch==2.4.1`, `transformers==4.43.1`, `flash-attn`, `modelscope`). `requirements.txt` is a legacy lock file and is not the source of truth.
 
 ```bash
-conda create -n sinkbudget python=3.10
-conda activate sinkbudget
-pip install --upgrade pip
+# Requires uv: https://docs.astral.sh/uv/getting-started/installation/
+
+# Create and activate a Python 3.10 virtual environment
+uv venv --python 3.10
+source .venv/bin/activate
 
 # Main package
-pip install -e .
+uv pip install -e .
 
 # Build the KIVI CUDA extension `kivi_gemv` (required by the quantized cache path).
 # Needs an NVIDIA GPU, a CUDA toolkit matching the installed torch, and nvcc on PATH.
-# `--no-build-isolation` is required: quant/setup.py imports torch, but pip's
+# `--no-build-isolation` is required: quant/setup.py imports torch, but an
 # isolated build env only contains setuptools, so without this flag the build
 # fails with `ModuleNotFoundError: No module named 'torch'`.
 # Re-run this after changing anything under quant/csrc/.
 cd quant
-pip install -e . --no-build-isolation
+uv pip install -e . --no-build-isolation
 cd ..
 ```
 
