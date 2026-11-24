@@ -6,11 +6,27 @@ look for an existing copy on the machine (an explicit path, the project's
 ``cached_models/`` directory, the ModelScope cache, or a per-dataset extraction
 cache) and reuse it. Only when no usable copy is found do we touch the network.
 
+Downloads default to ``~/data`` (override with the ``KIVI_DATA_DIR`` environment
+variable), regardless of source::
+
+    ~/data/
+    ├── modelscope/   # ModelScope snapshot cache (model weights)
+    ├── hf/
+    │   ├── hub/      # Hugging Face snapshot cache (model weights)
+    │   └── datasets/ # Hugging Face datasets cache
+    └── datasets/
+        ├── longbench/
+        └── gsm8k/
+
+Passing an explicit ``cache_dir`` keeps the historical layout (``<cache_dir>``
+for ModelScope snapshots and extracted datasets, ``<cache_dir>/hf`` for Hugging
+Face).
+
 Models
     :func:`resolve_model_path` returns a directory that ``transformers`` can
-    load. For ``model_source="hf"`` the id is returned untouched and the HF Hub
-    resolves it; for ``modelscope`` (the default) the snapshot is downloaded
-    with ``modelscope.snapshot_download`` and the local directory is returned.
+    load. Both sources download into the default root and return the local
+    directory: ``modelscope.snapshot_download`` for ``modelscope`` (the default)
+    and ``huggingface_hub.snapshot_download`` for ``hf``.
 
 Datasets
     :func:`load_long_bench_task` and :func:`load_gsm8k_split` return
@@ -101,6 +117,41 @@ def normalize_data_source(data_source):
 
 
 # ---------------------------------------------------------------------------
+# default download root
+# ---------------------------------------------------------------------------
+
+DATA_ROOT_ENV = "KIVI_DATA_DIR"
+
+
+def default_data_root():
+    """Root directory for downloaded models and datasets.
+
+    ``$KIVI_DATA_DIR`` overrides the default ``~/data``.
+    """
+    return _expand(os.environ.get(DATA_ROOT_ENV) or "~/data")
+
+
+def _data_subdir(name, cache_dir=None):
+    """Subdirectory of the download root; an explicit ``cache_dir`` wins."""
+    if cache_dir:
+        return os.path.join(_expand(cache_dir), name)
+    return os.path.join(default_data_root(), name)
+
+
+def _modelscope_cache_dir(cache_dir=None):
+    """Where ``modelscope.snapshot_download`` stores model weights."""
+    if cache_dir:
+        # Historical behaviour: the explicit dir is the snapshot root itself.
+        return _expand(cache_dir)
+    return _data_subdir("modelscope")
+
+
+def _hf_cache_root(cache_dir=None):
+    """Root holding the Hugging Face hub and datasets caches."""
+    return _data_subdir("hf", cache_dir)
+
+
+# ---------------------------------------------------------------------------
 # local-copy discovery
 # ---------------------------------------------------------------------------
 
@@ -109,20 +160,32 @@ def _cache_root(cache_dir=None):
     """Project-level cache root used for extracted dataset files."""
     if cache_dir:
         return _expand(cache_dir)
-    return os.path.join(os.path.expanduser("~"), ".cache", "kivi")
+    return _data_subdir("datasets")
 
 
 def _hub_roots(cache_dir=None, extra_roots=()):
-    """Directories that may already contain a ModelScope snapshot."""
+    """Directories that may already contain a ModelScope/HF snapshot."""
     roots = []
     if cache_dir:
-        roots.append(_expand(cache_dir))
+        explicit = _expand(cache_dir)
+        roots.append(explicit)
+        roots.append(os.path.join(explicit, "hf"))
+        roots.append(os.path.join(explicit, "hf", "hub"))
+    data_root = default_data_root()
+    roots.append(os.path.join(data_root, "modelscope"))
+    roots.append(os.path.join(data_root, "modelscope", "hub"))
+    roots.append(os.path.join(data_root, "hf", "hub"))
+    roots.append(data_root)
     env_cache = os.environ.get("MODELSCOPE_CACHE")
     if env_cache:
         roots.append(_expand(env_cache))
         roots.append(os.path.join(_expand(env_cache), "hub"))
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        roots.append(os.path.join(_expand(hf_home), "hub"))
     roots.append(os.path.join(os.path.expanduser("~"), ".cache", "modelscope", "hub"))
     roots.append(os.path.join(os.path.expanduser("~"), ".cache", "modelscope"))
+    roots.append(os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub"))
     for root in extra_roots:
         if root:
             roots.append(_expand(root))
@@ -205,9 +268,13 @@ def resolve_model_path(
 
     - local directory: returned as-is
     - an already-downloaded local copy is reused (explicit ``cache_dir``,
-      ``cached_models/``, the ModelScope cache, or an HF snapshot directory)
-    - ``model_source="hf"``: id returned as-is (the HF Hub resolves the download)
-    - ``model_source="modelscope"``: downloaded via ModelScope, local dir returned
+      ``cached_models/``, the ModelScope cache, an HF snapshot directory, or
+      the default ``~/data`` root)
+    - ``model_source="hf"``: downloaded into ``[cache_dir/]hf/hub`` and the
+      local directory is returned
+    - ``model_source="modelscope"``: downloaded into ``[cache_dir/]modelscope``
+      (the explicit ``cache_dir`` itself when given) and the local directory is
+      returned
     """
     source = normalize_model_source(model_source)
     local_path = _expand(model_name_or_path)
@@ -228,7 +295,22 @@ def resolve_model_path(
         return existing
 
     if source == "hf":
-        return model_name_or_path
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as exc:  # pragma: no cover - depends on environment
+            raise ImportError(
+                "model_source='hf' requires the `huggingface_hub` package. "
+                "Install it with `pip install huggingface_hub`, or pass "
+                "`--model_source modelscope` to use ModelScope instead."
+            ) from exc
+
+        hub_cache = os.path.join(_hf_cache_root(cache_dir), "hub")
+        _log(f"downloading {model_name_or_path} from Hugging Face into {hub_cache}")
+        return snapshot_download(
+            model_name_or_path,
+            revision=revision,
+            cache_dir=hub_cache,
+        )
 
     try:
         from modelscope import snapshot_download
@@ -239,10 +321,11 @@ def resolve_model_path(
             "to load from Hugging Face instead."
         ) from exc
 
-    _log(f"downloading {model_name_or_path} from ModelScope")
+    model_cache = _modelscope_cache_dir(cache_dir)
+    _log(f"downloading {model_name_or_path} from ModelScope into {model_cache}")
     return snapshot_download(
         model_name_or_path,
-        cache_dir=cache_dir,
+        cache_dir=model_cache,
         revision=revision,
     )
 
@@ -408,8 +491,11 @@ def load_long_bench_task(
     if source == "hf":
         from datasets import load_dataset
 
-        _log(f"loading {LONGBENCH_HF_ID}/{task} from Hugging Face")
-        return load_dataset(LONGBENCH_HF_ID, task, split=split)
+        datasets_cache = os.path.join(_hf_cache_root(cache_dir), "datasets")
+        _log(f"loading {LONGBENCH_HF_ID}/{task} from Hugging Face into {datasets_cache}")
+        return load_dataset(
+            LONGBENCH_HF_ID, task, split=split, cache_dir=datasets_cache
+        )
 
     root, zip_path = _resolve_longbench_source(data_dir=data_dir, cache_dir=cache_dir)
     path = _longbench_task_file(root, task)
@@ -513,8 +599,11 @@ def load_gsm8k_split(split="train", data_source="modelscope", data_dir=None, cac
     if source == "hf":
         from datasets import load_dataset
 
-        _log(f"loading {GSM8K_HF_ID}/{split} from Hugging Face")
-        return load_dataset(GSM8K_HF_ID, "main", split=split)
+        datasets_cache = os.path.join(_hf_cache_root(cache_dir), "datasets")
+        _log(f"loading {GSM8K_HF_ID}/{split} from Hugging Face into {datasets_cache}")
+        return load_dataset(
+            GSM8K_HF_ID, "main", split=split, cache_dir=datasets_cache
+        )
 
     path = _resolve_gsm8k_jsonl(split, data_dir=data_dir, cache_dir=cache_dir)
     from datasets import Dataset

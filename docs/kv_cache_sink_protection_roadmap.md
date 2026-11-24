@@ -187,6 +187,7 @@ Llama 原始项目跑通：
   - ✅ 兼容性修复：Llama-2 默认 ModelScope id 改为 `modelscope/Llama-2-7b-ms`（原 `LLM-Research/llama-2-7b-hf` 不存在）；Llama-3.x 改走 fast tokenizer（`utils/tokenizer_utils.py`），避免 slow tokenizer 在无根目录 `tokenizer.model` 时报 `TypeError: not a string`；
   - ✅ 基线记录工具 `scripts/m0_baseline.py`（`check` / `env` / `run`）；
   - ✅ 数据集本地优先 + ModelScope：`utils/modelscope_hub.py` 新增 `load_long_bench_task` / `load_gsm8k_split`。下载前依次检查 `--data_dir`（或 `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`）、`<cache_dir>/longbench/data` 与 `<cache_dir>/gsm8k` 的已解压副本、本机 ModelScope snapshot；都没有才下载 LongBench `ZhipuAI/LongBench` 的 `data.zip`（约 114 MB）或 `modelscope/gsm8k` 声明的 jsonl。`pred_long_bench.py` / `example.py` 不再访问 `huggingface.co`（`--data_source hf` 仍可显式切回）；
+  - ✅ 默认下载目录：未显式传 `--cache_dir` 时，ModelScope 模型落 `~/data/modelscope/`，HF 模型落 `~/data/hf/hub/`，HF 数据集落 `~/data/hf/datasets/`，LongBench / GSM8K 解压副本落 `~/data/datasets/{longbench,gsm8k}/`；根目录可用 `KIVI_DATA_DIR` 覆盖；
   - ⏳ CUDA 算子编译、`quant/gemv.py`、`example.py`、`long_context_example.py`、`mem_spd_test.py`、LongBench smoke 待 GPU 机器执行。
 - M0.2 模型策略确认：✅ 已与用户确认 **L1**；书面选型记录见 `docs/m0_llama_baseline.md`；M0 未引入任何 Qwen 代码/配置（已 grep 确认）。
 - M0.3 基线冻结：⏳ 记录脚本与模板就绪；FP16 / KIVI-2 / KIVI-4 的 3 次重复运行待 GPU 执行。
@@ -207,6 +208,12 @@ python - <<'PY'
 from utils.modelscope_hub import load_long_bench_task, load_gsm8k_split
 print(len(load_long_bench_task("qasper", cache_dir="./cached_models")))
 print(len(load_gsm8k_split("test", cache_dir="./cached_models")))
+PY
+
+# 默认下载根目录：默认 ~/data，KIVI_DATA_DIR 可覆盖
+KIVI_DATA_DIR= python - <<'PY'
+from utils.modelscope_hub import default_data_root
+print(default_data_root())
 PY
 
 # 固定量化配置校验（residual_length 必须是 group_size 的整数倍）

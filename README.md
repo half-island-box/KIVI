@@ -99,13 +99,26 @@ cd ..
 
 Models are fetched from **ModelScope by default**. Pass `--model_source hf` (or `model_source="hf"` when calling `utils.modelscope_hub.resolve_model_path`) to load from Hugging Face Hub instead; model ids must be valid on the selected source.
 
+**Downloads default to `~/data`** for both sources (override with the `KIVI_DATA_DIR` environment variable; an explicit `--cache_dir` still takes precedence):
+
+```text
+~/data/
+├── modelscope/   # ModelScope model snapshots
+├── hf/
+│   ├── hub/      # Hugging Face model snapshots
+│   └── datasets/ # Hugging Face datasets cache
+└── datasets/
+    ├── longbench/
+    └── gsm8k/
+```
+
 Benchmark data follows the same rule (`--data_source hf` opts into Hugging Face; leaving it unset means "follow `--model_source`"). **Every loader checks the machine before downloading**, in this order:
 
 1. an explicit directory: `--data_dir`, or `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`, holding `data/*.jsonl` or `data.zip`;
-2. an already-extracted copy under the cache dir: `<cache_dir>/longbench/data/`, `<cache_dir>/gsm8k/`;
-3. an existing ModelScope snapshot on the machine (for example `~/.cache/modelscope/hub/datasets/ZhipuAI/LongBench`).
+2. an already-extracted copy under the cache dir (`--cache_dir`, default `~/data/datasets`): `<cache_dir>/longbench/data/`, `<cache_dir>/gsm8k/`;
+3. an existing ModelScope or Hugging Face snapshot on the machine (for example `~/data/modelscope/hub/datasets/ZhipuAI/LongBench` or `~/.cache/modelscope/hub/datasets/ZhipuAI/LongBench`).
 
-Only when none of these exist does it download: LongBench's `data.zip` (~114 MB) from the ModelScope dataset `ZhipuAI/LongBench`, and the GSM8K split jsonl files declared by `modelscope/gsm8k`. `scripts/long_test.sh` passes `--cache_dir ./cached_models`, so extracted data lands there. Nothing is fetched from `huggingface.co` on the default path; the same local-first check applies to model weights (`--cache_dir`, `cached_models/`, the ModelScope cache), so a second run never re-downloads.
+Only when none of these exist does it download: LongBench's `data.zip` (~114 MB) from the ModelScope dataset `ZhipuAI/LongBench`, and the GSM8K split jsonl files declared by `modelscope/gsm8k`. `scripts/long_test.sh` passes `--cache_dir ./cached_models`, so extracted data lands there. Nothing is fetched from `huggingface.co` on the default path; the same local-first check applies to model weights (`--cache_dir`, `cached_models/`, the ModelScope/HF caches, `~/data`), so a second run never re-downloads.
 
 ## Quick start
 

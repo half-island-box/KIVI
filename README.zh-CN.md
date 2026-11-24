@@ -99,13 +99,26 @@ cd ..
 
 模型默认从 **ModelScope** 拉取。传 `--model_source hf`（或在调用 `utils.modelscope_hub.resolve_model_path` 时传 `model_source="hf"`）可改回 Hugging Face Hub；模型 id 需要与所选源匹配。
 
+**两种源的下载目录默认都在 `~/data` 下**（可用环境变量 `KIVI_DATA_DIR` 覆盖；显式传 `--cache_dir` 时仍以 `--cache_dir` 为准）：
+
+```text
+~/data/
+├── modelscope/   # ModelScope 模型快照
+├── hf/
+│   ├── hub/      # Hugging Face 模型快照
+│   └── datasets/ # Hugging Face 数据集缓存
+└── datasets/
+    ├── longbench/
+    └── gsm8k/
+```
+
 数据集遵循同一规则（`--data_source hf` 才走 Hugging Face；不填表示跟随 `--model_source`）。**所有 loader 在下载之前都会先检查本机**，顺序为：
 
 1. 显式目录：`--data_dir`，或环境变量 `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`，内含 `data/*.jsonl` 或 `data.zip`；
-2. 缓存目录里已解压的副本：`<cache_dir>/longbench/data/`、`<cache_dir>/gsm8k/`；
-3. 本机已有的 ModelScope snapshot（例如 `~/.cache/modelscope/hub/datasets/ZhipuAI/LongBench`）。
+2. 缓存目录里已解压的副本（`--cache_dir`，默认 `~/data/datasets`）：`<cache_dir>/longbench/data/`、`<cache_dir>/gsm8k/`；
+3. 本机已有的 ModelScope 或 Hugging Face snapshot（例如 `~/data/modelscope/hub/datasets/ZhipuAI/LongBench` 或 `~/.cache/modelscope/hub/datasets/ZhipuAI/LongBench`）。
 
-三者都不存在时才会下载：LongBench 的 `data.zip`（约 114 MB，来自 ModelScope 数据集 `ZhipuAI/LongBench`），以及 `modelscope/gsm8k` 声明的各 split jsonl。`scripts/long_test.sh` 会传 `--cache_dir ./cached_models`，解压后的数据落在该目录下。默认路径不会访问 `huggingface.co`；模型权重同样先查 `--cache_dir`、`cached_models/` 与 ModelScope 缓存，重复运行不会重新下载。
+三者都不存在时才会下载：LongBench 的 `data.zip`（约 114 MB，来自 ModelScope 数据集 `ZhipuAI/LongBench`），以及 `modelscope/gsm8k` 声明的各 split jsonl。`scripts/long_test.sh` 会传 `--cache_dir ./cached_models`，解压后的数据落在该目录下。默认路径不会访问 `huggingface.co`；模型权重同样先查 `--cache_dir`、`cached_models/`、ModelScope/HF 缓存与 `~/data`，重复运行不会重新下载。
 
 ## 快速开始
 
