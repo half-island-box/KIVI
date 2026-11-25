@@ -150,7 +150,7 @@ model = LlamaForCausalLM_KIVI.from_pretrained(
     config=config,
     torch_dtype=torch.float16,
     low_cpu_mem_usage=True,
-    device_map="auto",
+    device_map="auto",  # or {"": "cuda:1"} to pin the model to one GPU
 )
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
@@ -175,7 +175,8 @@ python long_context_example.py # passkey retrieval
 python mem_spd_test.py         # latency and peak memory
 
 # All three accept --model_name_or_path / --cache_dir / --model_source (default: modelscope)
-python example.py --model_source hf --model_name_or_path meta-llama/Llama-3.1-8B-Instruct
+# and --device to pick a GPU (PyTorch-visible index: --device cuda:1 or --device 1)
+python example.py --model_source hf --model_name_or_path meta-llama/Llama-3.1-8B-Instruct --device cuda:1
 ```
 
 ### LongBench
@@ -187,12 +188,14 @@ python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 
 `scripts/long_test.sh` takes `{GPU_ID} {K_BITS} {V_BITS} {GROUP_SIZE} {RESIDUAL_LENGTH} {MODEL} [MODEL_SOURCE] [DATA_DIR]`. `MODEL_SOURCE` defaults to `modelscope` (the Llama-2 base model is published as `modelscope/Llama-2-7b-ms`); pass `hf` to use a Hugging Face id such as `meta-llama/Llama-2-7b-hf`. The optional `DATA_DIR` is forwarded as `--data_dir`. Predictions are written under `pred/`, and `eval_long_bench.py` scores them. Dataset and prompt settings live in `config/`.
 
+`pred_long_bench.py` also accepts `--device` (same visible-index semantics as the example scripts), e.g. `--device 1`; `scripts/long_test.sh` keeps using its first `GPU_ID` argument.
+
 LongBench data is downloaded once from ModelScope and extracted under `./cached_models/longbench/`. To reuse data that is already on the machine (for example a copy synced from another host), point the loader at it instead:
 
 ```bash
 python pred_long_bench.py --model_name_or_path modelscope/Llama-2-7b-ms \
     --cache_dir ./cached_models --data_dir /path/to/longbench \
-    --k_bits 2 --v_bits 2 --group_size 32 --residual_length 128
+    --k_bits 2 --v_bits 2 --group_size 32 --residual_length 128 --device 1
 ```
 
 `--data_dir` may hold `data/*.jsonl`, `data.zip`, or `{task}.jsonl` directly; nothing is downloaded when the requested task file is found. Add `--data_source hf` only if you deliberately want the Hugging Face `THUDM/LongBench` copy (this needs HF network access).

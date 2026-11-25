@@ -8,6 +8,7 @@ import argparse
 os.environ["WANDB_DISABLED"] = "true"
 
 from utils.process_args import process_args
+from utils.device_utils import device_map_for, resolve_device
 from utils.modelscope_hub import load_long_bench_task, resolve_model_path
 from utils.tokenizer_utils import load_llama_tokenizer
 from transformers import LlamaConfig, MistralConfig, AutoTokenizer
@@ -98,11 +99,11 @@ if __name__ == '__main__':
     # args = parse_args()
     model2path = json.load(open("config/model2path.json", "r"))
     model2maxlen = json.load(open("config/model2maxlen.json", "r"))
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # model_name = args.model
 
     # define your model
     model_args, data_args, training_args = process_args()
+    device = resolve_device(model_args.device)
+    device_map = device_map_for(model_args.device, device)
     # print(model_args, data_args, training_args)
     data_source = data_args.data_source or model_args.model_source
     model_name = model_args.model_name_or_path.split("/")[-1]
@@ -140,7 +141,7 @@ if __name__ == '__main__':
                 cache_dir=training_args.cache_dir,
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
-                device_map="auto",
+                device_map=device_map,
             )
         else:
             from transformers import LlamaForCausalLM
@@ -151,7 +152,7 @@ if __name__ == '__main__':
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
                 use_flash_attention_2=True,
-                device_map="auto",
+                device_map=device_map,
             )
 
     elif 'mistral' in model_args.model_name_or_path.lower():
@@ -168,7 +169,7 @@ if __name__ == '__main__':
                 cache_dir=training_args.cache_dir,
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
-                device_map="auto",
+                device_map=device_map,
             )
         else:
             from transformers import MistralForCausalLM
@@ -179,7 +180,7 @@ if __name__ == '__main__':
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
                 use_flash_attention_2=True,
-                device_map="auto",
+                device_map=device_map,
             )
 
     else:

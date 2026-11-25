@@ -12,6 +12,7 @@ from utils.modelscope_hub import (
     resolve_model_path,
 )
 from utils.tokenizer_utils import load_llama_tokenizer
+from utils.device_utils import add_device_argument, resolve_device
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name_or_path", type=str,
@@ -20,7 +21,10 @@ parser.add_argument("--cache_dir", type=str, default=None)
 parser.add_argument("--data_dir", type=str, default=None,
                     help="Local GSM8K directory; reused instead of downloading.")
 add_model_source_argument(parser)
+add_device_argument(parser)
 args = parser.parse_args()
+
+device = resolve_device(args.device)
 
 model_path = resolve_model_path(
     args.model_name_or_path,
@@ -46,7 +50,7 @@ model = LlamaForCausalLM_KIVI.from_pretrained(
     config=config,
     low_cpu_mem_usage=True,
     torch_dtype=torch.float16,
-).cuda()
+).to(device)
 
 enc = load_llama_tokenizer(model_path, args.model_name_or_path)
 
@@ -56,7 +60,7 @@ prompt = ''
 for i in range(5):
     prompt += 'Question: ' + dataset['train'][i]['question'] + '\nAnswer: ' + dataset['train'][i]['answer'] + '\n'
 prompt += "Question: John takes care of 10 dogs. Each dog takes .5 hours a day to walk and take care of their business. How many hours a week does he spend taking care of dogs?"
-inputs = enc(prompt, return_tensors="pt").input_ids.cuda()
+inputs = enc(prompt, return_tensors="pt").input_ids.to(device)
 
 output = model.generate(inputs, max_new_tokens=96)
 config_str = f"# prompt tokens: {inputs.shape[1]}, K bit: {config.k_bits}, v_bits: {config.v_bits}, group_size: {config.group_size}, residual_length: {config.residual_length}"

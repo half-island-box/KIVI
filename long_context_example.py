@@ -9,13 +9,17 @@ from transformers import LlamaConfig
 from datasets import load_dataset
 from utils.modelscope_hub import add_model_source_argument, resolve_model_path
 from utils.tokenizer_utils import load_llama_tokenizer
+from utils.device_utils import add_device_argument, resolve_device
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_name_or_path", type=str,
                     default="LLM-Research/Meta-Llama-3.1-8B-Instruct")
 parser.add_argument("--cache_dir", type=str, default=None)
 add_model_source_argument(parser)
+add_device_argument(parser)
 args = parser.parse_args()
+
+device = resolve_device(args.device)
 
 model_path = resolve_model_path(
     args.model_name_or_path,
@@ -37,7 +41,7 @@ model = LlamaForCausalLM_KIVI.from_pretrained(
     # cache_dir=CACHE_DIR,
     low_cpu_mem_usage=True,
     torch_dtype=torch.float16,
-).cuda()
+).to(device)
 
 enc = load_llama_tokenizer(model_path, args.model_name_or_path)
 
@@ -49,7 +53,7 @@ for line in open(file_name, "r"):
     example = json.loads(line)
     prompt_postfix = "What is the pass key? The pass key is "
     prompt = example["input"] + prompt_postfix
-    input_ids = enc(prompt, return_tensors="pt").input_ids.cuda()
+    input_ids = enc(prompt, return_tensors="pt").input_ids.to(device)
     print( "-----------------------------------" )
     print( f"#Tokens of Prompt:", input_ids.shape[1], end=" " )
     print( "Passkey target:", example["target"] )

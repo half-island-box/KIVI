@@ -24,6 +24,15 @@ class ModelArguments:
             "'modelscope' (default) or 'hf'."
         },
     )
+    device: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Inference device, e.g. 'cuda:1', '1', or 'cpu'. "
+            "Indexes follow PyTorch's visible-device numbering "
+            "(CUDA_VISIBLE_DEVICES). Defaults to the current CUDA device "
+            "(cuda:0 when visible), or CPU when CUDA is unavailable."
+        },
+    )
     k_bits: Optional[int] = field(
         default=2,
         metadata={"help": "KV_cache quantization bits."},
