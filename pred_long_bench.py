@@ -5,11 +5,13 @@ from tqdm import tqdm
 import numpy as np
 import random
 import argparse
+from datetime import datetime, timezone
 os.environ["WANDB_DISABLED"] = "true"
 
 from utils.process_args import process_args
 from utils.device_utils import device_map_for, resolve_device
 from utils.modelscope_hub import load_long_bench_task, resolve_model_path
+from utils.resume import load_or_write_meta, read_valid_jsonl_count
 from utils.tokenizer_utils import load_llama_tokenizer
 from transformers import LlamaConfig, MistralConfig, AutoTokenizer
 
@@ -47,9 +49,22 @@ def post_process(response, model_name):
         response = response.split("<eoa>")[0]
     return response
 
-def get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset, device, model_name):
+def get_pred(
+    model,
+    tokenizer,
+    data,
+    max_length,
+    max_gen,
+    prompt_format,
+    dataset,
+    device,
+    model_name,
+    start_index=0,
+    out_file=None,
+):
     preds = []
-    for json_obj in tqdm(data):
+    pending = data[start_index:]
+    for json_obj in tqdm(pending, initial=start_index, total=len(data), desc=dataset):
         prompt = prompt_format.format(**json_obj)
         # truncate to fit max_length (we suggest truncate in the middle, since the left and right side may contain crucial instructions)
         tokenized_prompt = tokenizer(prompt, truncation=False, return_tensors="pt").input_ids[0]
@@ -82,7 +97,12 @@ def get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset
             )[0]
         pred = tokenizer.decode(output[context_length:], skip_special_tokens=True)
         pred = post_process(pred, model_name)
-        preds.append({"pred": pred, "answers": json_obj["answers"], "all_classes": json_obj["all_classes"], "length": json_obj["length"]})
+        record = {"pred": pred, "answers": json_obj["answers"], "all_classes": json_obj["all_classes"], "length": json_obj["length"]}
+        if out_file is None:
+            preds.append(record)
+        else:
+            out_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+            out_file.flush()
     return preds
 
 def seed_everything(seed):
@@ -194,18 +214,55 @@ if __name__ == '__main__':
     model.eval()
     max_length = model2maxlen[model_name]
     if data_args.e:
-        datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", 
+        datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news",
                     "trec", "triviaqa", "samsum", "passage_count", "passage_retrieval_en", "lcc", "repobench-p"]
     else:
         datasets = ["triviaqa", "qasper", "trec", "samsum", "lcc", "repobench-p", "qmsum", "multi_news"]
     # we design specific prompt format and max generation length for each task, feel free to modify them to optimize model output
     dataset2prompt = json.load(open("config/dataset2prompt.json", "r"))
     dataset2maxlen = json.load(open("config/dataset2maxlen.json", "r"))
-    # predict on each dataset
-    if not os.path.exists("pred"):
-        os.makedirs("pred")
-    if not os.path.exists("pred_e"):
-        os.makedirs("pred_e")
+
+    resume = bool(data_args.resume)
+    split_dir = "pred_e" if data_args.e else "pred"
+    os.makedirs(split_dir, exist_ok=True)
+    pred_dir = os.path.join(
+        split_dir,
+        f"{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}",
+    )
+    os.makedirs(pred_dir, exist_ok=True)
+    if not resume:
+        # A fresh run must not leave old task files behind: a later --resume
+        # would otherwise treat them as results of the new run.
+        for name in datasets:
+            stale = os.path.join(pred_dir, f"{name}.jsonl")
+            if os.path.exists(stale):
+                os.remove(stale)
+
+    meta = {
+        "model_name_or_path": model_args.model_name_or_path,
+        "model_source": model_args.model_source,
+        "data_source": data_source,
+        "max_length": max_length,
+        "k_bits": model_args.k_bits,
+        "v_bits": model_args.v_bits,
+        "group_size": model_args.group_size,
+        "residual_length": model_args.residual_length,
+        "e": bool(data_args.e),
+        "dataset2maxlen": dataset2maxlen,
+        "dataset2prompt": dataset2prompt,
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    meta_path = os.path.join(pred_dir, "run_meta.json")
+    try:
+        validated = load_or_write_meta(meta_path, meta, resume=resume)
+    except ValueError as exc:
+        raise SystemExit(f"[resume] {exc}") from exc
+    if resume:
+        if validated:
+            print(f"[resume] validated {meta_path}")
+        else:
+            print(f"[resume] no previous metadata; wrote {meta_path}")
+
     for dataset in datasets:
         if data_args.e:
             data = load_long_bench_task(
@@ -215,9 +272,6 @@ if __name__ == '__main__':
                 data_dir=data_args.data_dir,
                 cache_dir=training_args.cache_dir,
             )
-            if not os.path.exists(f"pred_e/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}"):
-                os.makedirs(f"pred_e/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}")
-            out_path = f"pred_e/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}/{dataset}.jsonl"
         else:
             data = load_long_bench_task(
                 dataset,
@@ -226,13 +280,30 @@ if __name__ == '__main__':
                 data_dir=data_args.data_dir,
                 cache_dir=training_args.cache_dir,
             )
-            if not os.path.exists(f"pred/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}"):
-                os.makedirs(f"pred/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}")
-            out_path = f"pred/{model_name}_{max_length}_{model_args.k_bits}bits_group{model_args.group_size}_residual{model_args.residual_length}/{dataset}.jsonl"
-        prompt_format = dataset2prompt[dataset]
-        max_gen = dataset2maxlen[dataset]
-        preds = get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset, device, model_name)
-        with open(out_path, "w", encoding="utf-8") as f:
-            for pred in preds:
-                json.dump(pred, f, ensure_ascii=False)
-                f.write('\n')
+        out_path = os.path.join(pred_dir, f"{dataset}.jsonl")
+        total = len(data)
+        done = 0
+        if resume:
+            try:
+                done = read_valid_jsonl_count(out_path, expected_total=total)
+            except ValueError as exc:
+                raise SystemExit(f"[resume] {exc}") from exc
+            if done >= total:
+                print(f"[resume] skip completed {dataset}: {done}/{total}")
+                continue
+            print(f"[resume] {dataset}: {done}/{total}")
+        mode = "a" if done else "w"
+        with open(out_path, mode, encoding="utf-8") as out_file:
+            get_pred(
+                model,
+                tokenizer,
+                data,
+                max_length,
+                dataset2maxlen[dataset],
+                dataset2prompt[dataset],
+                dataset,
+                device,
+                model_name,
+                start_index=done,
+                out_file=out_file,
+            )

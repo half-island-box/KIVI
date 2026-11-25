@@ -190,6 +190,8 @@ python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 
 `pred_long_bench.py` also accepts `--device` (same visible-index semantics as the example scripts), e.g. `--device 1`; `scripts/long_test.sh` keeps using its first `GPU_ID` argument.
 
+Interrupted runs can be resumed: pass `--resume` to `pred_long_bench.py`, or set `RESUME=1` for `scripts/long_test.sh`. Completed tasks and samples are skipped, and an incomplete trailing JSONL line is truncated to the last complete record. Each prediction directory gets a `run_meta.json`; `--resume` refuses to continue if the model, quantization, max length, prompt or generation-length config changed. Do not combine `--resume` with `m0_baseline.py --repeat > 1` — later repeats would see the completed predictions and skip them.
+
 `config/model2maxlen.json` caps Llama-3.1-8B / Meta-Llama-3.1-8B prompts at **4096** tokens so the 8B LongBench runs fit on a 24GB RTX 3090; raise the entry only when the GPU can hold the prefill logits.
 
 LongBench data is downloaded once from ModelScope and extracted under `./cached_models/longbench/`. To reuse data that is already on the machine (for example a copy synced from another host), point the loader at it instead:

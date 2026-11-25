@@ -121,6 +121,13 @@ class DataArguments:
         default=False,
         metadata={"help": "Evaluate on LongBench-E."},
     )
+    resume: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "Resume from existing per-sample predictions; skip completed "
+            "samples and tasks. Do not combine with m0_baseline.py --repeat > 1."
+        },
+    )
     data_source: Optional[str] = field(
         default=None,
         metadata={
