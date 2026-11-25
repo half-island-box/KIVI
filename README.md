@@ -223,6 +223,41 @@ python scripts/m0_baseline.py run --name llama2_kivi2_longbench --repeat 3 -- \
 
 Raw records land in `results/m0_baselines/` (git-ignored). The curated status, fixed KIVI configuration, L1 model-selection record, and the GPU TODO list live in the [M0 Llama baseline record](docs/m0_llama_baseline.md) (Chinese).
 
+### M1 sink calibration (prototype)
+
+M1 adds `kivi_sink/` (read-only attention statistics / sink scores) and `tests/`. It does not touch the KIVI inference path: calibration loads a separate Hugging Face model in its own process, and the `.npz` / JSON artifacts stay outside the model checkpoint.
+
+```bash
+# Pure-function smoke test, no model or dataset needed (random Q/K tensors)
+python -m kivi_sink.calibration --synthetic \
+    --samples 3 --synthetic-layers 4 --max-length 64 --top-m 2 \
+    --output results/sink/calibration/synthetic.json
+
+# Exact attention on a short diagnostic window (eager attention; memory is O(heads * T^2))
+python -m kivi_sink.calibration \
+    --model LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --mode exact --max-length 512 --samples 8 \
+    --output results/sink/calibration/llama31_exact.json
+
+# Exact + key-norm proxy in one eager pass, with a Spearman correlation report
+python -m kivi_sink.calibration \
+    --model LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --mode both --max-length 512 --samples 8 \
+    --output results/sink/calibration/llama31_both.json
+
+# Long-context proxy pass (no attention matrix; read-only k_proj hooks)
+python -m kivi_sink.calibration \
+    --model LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --mode proxy --max-length 4096 --samples 16 \
+    --output results/sink/calibration/llama31_proxy.json \
+    --save-token-scores results/sink/calibration/llama31_proxy.npz
+
+# Unit tests (CPU only)
+python -m unittest discover -s tests -v
+```
+
+Calibration defaults to LongBench `narrativeqa`, which is outside both evaluation task lists; `--calibration-jsonl` accepts a separate held-out set, and evaluation tasks are rejected unless `--allow-eval-task` is passed deliberately. Each run writes a JSON summary plus a sibling CSV (per-layer `A_l` statistics and exact-vs-proxy Spearman). See the [M1 calibration notes](docs/m1_sink_calibration.md) (Chinese) for the schema, query-fraction semantics, and current GPU TODO list.
+
 ## Repository layout
 
 ```text
@@ -231,6 +266,8 @@ quant/         Triton quantization/packing + CUDA extension (kivi_gemv)
 utils/         argument parsing and data helpers
 config/        model paths, max lengths, and LongBench prompts
 scripts/       long_test.sh, m0_baseline.py
+kivi_sink/     M1 calibration: attention stats, sink scores, calibration runner
+tests/         unit tests for kivi_sink (CPU only)
 docs/          research plan, roadmap, code walkthrough, LongBench results
 example.py, long_context_example.py, mem_spd_test.py
 pred_long_bench.py, eval_long_bench.py, metrics.py
@@ -251,6 +288,7 @@ Accuracy and efficiency will be compared under identical model, tokenization, ge
 - [Research proposal (Chinese)](docs/KV%20Cache量化优化.md) — problem, method, baselines, ablations, risks.
 - [Engineering roadmap (Chinese)](docs/kv_cache_sink_protection_roadmap.md) — M0–M7 tasks, deliverables, acceptance criteria, and verification commands.
 - [M0 Llama baseline record (Chinese)](docs/m0_llama_baseline.md) — L1 selection, fixed KIVI config, environment template, GPU TODO list.
+- [M1 calibration notes (Chinese)](docs/m1_sink_calibration.md) — attention stats, sink scores, calibration commands, output schema, GPU TODO list.
 - [Code walkthrough (Chinese)](docs/KIVI_项目结构与代码链路分析.md) — cache state machine, kernel layout, and extension points.
 - [LongBench results](docs/long_bench.md) — upstream KIVI results for LongChat and Mistral.
 

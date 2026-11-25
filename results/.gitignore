@@ -1,0 +1,3 @@
+# Calibration and experiment artifacts stay on the machine.
+*
+!.gitignore

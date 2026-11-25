@@ -1,0 +1,138 @@
+{
+  "example_note": "Synthetic random Q/K tensors produced by --synthetic; schema illustration only, not a research result.",
+  "schema_version": 1,
+  "metadata": {
+    "created_at": "<removed for a stable committed example>",
+    "git_commit": null,
+    "git_branch": "sink_budget",
+    "git_dirty": null,
+    "python": "3.13.18",
+    "torch": "2.15.0",
+    "transformers": null,
+    "flash_attn": null,
+    "device": "cpu",
+    "model_path": null,
+    "num_decoder_layers": 3,
+    "dtype": "float32",
+    "synthetic_query_heads": 4,
+    "synthetic_kv_heads": 2,
+    "synthetic_head_dim": 16
+  },
+  "config": {
+    "model": null,
+    "model_source": "modelscope",
+    "cache_dir": null,
+    "mode": "exact",
+    "synthetic": true,
+    "synthetic_layers": 3,
+    "calibration_jsonl": null,
+    "longbench_task": null,
+    "text_field": null,
+    "allow_eval_task": false,
+    "data_source": "modelscope",
+    "data_dir": null,
+    "samples": 2,
+    "max_length": 32,
+    "query_fraction": 1.0,
+    "top_m": 2,
+    "chat_template": "auto",
+    "dtype": "auto",
+    "device": null,
+    "seed": 7,
+    "n_boot": 20,
+    "ci": 0.95,
+    "output": "docs/examples/m1_synthetic_calibration.json",
+    "save_token_scores": null
+  },
+  "samples": [
+    {
+      "id": "synthetic-0",
+      "num_tokens": 32,
+      "exact_A": [
+        0.22685135900974274,
+        0.2242794632911682,
+        0.21682700514793396
+      ],
+      "proxy_A": [
+        0.08078406006097794,
+        0.0805000439286232,
+        0.07740417867898941
+      ]
+    },
+    {
+      "id": "synthetic-1",
+      "num_tokens": 32,
+      "exact_A": [
+        0.23198416829109192,
+        0.2118612825870514,
+        0.24229970574378967
+      ],
+      "proxy_A": [
+        0.07706797868013382,
+        0.08539902418851852,
+        0.07819762080907822
+      ]
+    }
+  ],
+  "samples_skipped": [],
+  "layers": [
+    {
+      "layer": 0,
+      "exact_A_mean": 0.22941777110099792,
+      "exact_A_median": 0.22685135900974274,
+      "exact_A_std": 0.0036294441670179367,
+      "exact_A_ci_low": 0.22685135900974274,
+      "exact_A_ci_high": 0.23198416829109192,
+      "proxy_A_mean": 0.07892601937055588,
+      "proxy_A_median": 0.07706797868013382,
+      "proxy_A_std": 0.0026276663411408663,
+      "proxy_A_ci_low": 0.07706797868013382,
+      "proxy_A_ci_high": 0.08078406006097794,
+      "exact_token_spearman_mean": 0.04582111436950147
+    },
+    {
+      "layer": 1,
+      "exact_A_mean": 0.2180703729391098,
+      "exact_A_median": 0.2118612825870514,
+      "exact_A_std": 0.008780979551374912,
+      "exact_A_ci_low": 0.2118612825870514,
+      "exact_A_ci_high": 0.2242794632911682,
+      "proxy_A_mean": 0.08294953405857086,
+      "proxy_A_median": 0.0805000439286232,
+      "proxy_A_std": 0.0034641020465642214,
+      "proxy_A_ci_low": 0.0805000439286232,
+      "proxy_A_ci_high": 0.08539902418851852,
+      "exact_token_spearman_mean": 0.06396627565982405
+    },
+    {
+      "layer": 2,
+      "exact_A_mean": 0.22956335544586182,
+      "exact_A_median": 0.21682700514793396,
+      "exact_A_std": 0.018011920154094696,
+      "exact_A_ci_low": 0.21682700514793396,
+      "exact_A_ci_high": 0.24229970574378967,
+      "proxy_A_mean": 0.07780089974403381,
+      "proxy_A_median": 0.07740417867898941,
+      "proxy_A_std": 0.0005610483349300921,
+      "proxy_A_ci_low": 0.07740417867898941,
+      "proxy_A_ci_high": 0.07819762080907822,
+      "exact_token_spearman_mean": 0.11821847507331379
+    }
+  ],
+  "correlation": {
+    "proxy": "key_norm",
+    "token_spearman_per_layer": [
+      0.04582111436950147,
+      0.06396627565982405,
+      0.11821847507331379
+    ],
+    "token_spearman_mean": 0.0760019550342131,
+    "layer_A_spearman_per_sample": [
+      1.0,
+      -0.5
+    ],
+    "layer_A_spearman_mean": 0.25,
+    "exact_layer_A_stability_spearman": -0.5,
+    "proxy_layer_A_stability_spearman": -0.5
+  }
+}
