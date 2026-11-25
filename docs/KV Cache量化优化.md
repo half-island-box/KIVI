@@ -6,6 +6,14 @@
 
 KV Cache 低比特 PTQ 中，attention sink token 对长上下文性能很重要，但现有保护策略往往全局统一：固定保护前 $N$ 个 token，或所有层使用相同保护强度。StreamingLLM 说明了保留初始 sink token 与滑动窗口对稳定长上下文生成的作用 [3]；KVSink 进一步指出仅保护初始 token 不足以覆盖所有 sink，并讨论了量化场景下的 sink 保护 [4]。本方案进一步假设：不同层对 sink 误差的敏感度不同，因此统一分配可能造成部分层保护不足、部分层浪费 FP 预算。这一层间异质性假设将通过实验验证。
 
+**与 MultiAlloc 的关系（2026-10 新增）。** Zhou 等提出的 MultiAlloc [16] 同样把 KV cache 量化视为固定显存预算下的精度分配问题：离线用一阶梯度加权的量化误差刻画层敏感度，用 K 激活的 L1 范数刻画 token 重要性，在“层比特宽度”与“组内 top-$k$ token 高精度保留”之间分配预算，推理期执行一个与输入无关的静态策略。该工作说明“层间 + token 级联合预算分配”本身已不再是空白，因此本选题的定位需要收紧到 MultiAlloc 未覆盖的三点：
+
+1. **sink 特定的重要性定义**：MultiAlloc 的 token 分数是 K 激活范数，不区分 attention sink；本文以 prefill 注意力质量定义 token sink score，并显式估计层间 sink 依赖 $A_l$。
+2. **在线 token 选择**：MultiAlloc 在每个 token 组内按静态分数取 top-$k$；本文离线只分配每层预算 $P_l$，具体保护哪些 token 在 prefill 阶段按当前序列的注意力分布重新选择，避免把校准样本的 token 位置迁移到测试序列。
+3. **decode 延迟量化**：MultiAlloc 对新生成 KV 按策略立即量化；本文让新 token 先进入 FP 观察窗，滑出时再依据累积 sink score 做单向 keep/quantize 决策，并支持动态槽位替换。
+
+相应地，M3 主矩阵应把 MultiAlloc 作为外部 baseline：优先在相同 KV 预算与相同量化后端下复现；若其实现绑定自身的层比特配置，则报告原文数字并明确标注预算口径差异，不把不同口径的数字直接混表。
+
 同时，如果保护集合在 prefill 后完全冻结，decode 新生成的 token 会很快进入低比特 cache。长输出任务中，后期生成 token 也可能被后续 query 持续访问；若没有观察期，其量化误差会持续影响生成。
 
 本选题不训练模型，在 KIVI 上插入轻量的 **token 级层间保护预算分配模块** 与 **解码期延迟量化机制**
@@ -44,7 +52,7 @@ TurboQuant 不作为第一版主底座：其 randomized Hadamard rotation 与向
 
 ```text
 Offline calibration:
-	original KIVI process
+    original KIVI process
     estimate layer-wise sink dependency
     allocate protection budget P_l for each layer
 
@@ -339,8 +347,9 @@ $$
 | Reverse allocation          | 低依赖层多得预算                 | selected K/V FP |              有 |    无 |
 | Full method                 | Combined allocation      | selected K/V FP |              有 |    有 |
 | Oracle token selection      | 当前样本真实注意力                | selected K/V FP |              有 |   可选 |
+| MultiAlloc（外部对照） | 层敏感度 + token K 范数，离线静态策略 | 组内 top-$k$ 高精度 | 有 | 无 |
 
-Random / Reverse 证明收益不是任意额外 FP 存储；Attention-only / Quant-error-only 证明组合指标是否有必要；Oracle 用于估计当前排序规则与上界差距。
+Random / Reverse 证明收益不是任意额外 FP 存储；Attention-only / Quant-error-only 证明组合指标是否有必要；Oracle 用于估计当前排序规则与上界差距。MultiAlloc [16] 是当前最接近的外部工作，需在统一显存口径下比较；若其量化后端与 KIVI 不同，只作为参考行并在表注中说明配置差异。
 
 ### 6.4 K/V 诊断性消融：非主实验
 
@@ -386,10 +395,11 @@ Random / Reverse 证明收益不是任意额外 FP 存储；Attention-only / Qua
 6. **动态槽位收益不显著**：扫描 $R$，增加长输出任务；若仍无收益，动态槽位作为可选增强。
 7. **固定预算随上下文长度含义变化**：主实验用固定绝对 budget，附录补充比例预算 $B^{\mathrm{FP}}=\alpha B^{\mathrm{cache}}(L)$。
 8. **与 KIVI recent window 混淆**：所有 baseline 使用相同 $R$，主表报告 effective FP bytes。
+9. **与 MultiAlloc 的创新性重叠**：MultiAlloc [16] 已提出固定预算下层间精度与 token 保留的联合分配。应对：把主张收敛为 (a) sink 特定分数、(b) 在线 prefill token 选择、(c) decode 延迟量化与动态槽位；主矩阵加入 MultiAlloc 对照，并增加“静态组内 top-$k$ vs 在线选择”的消融，证明差异来自本文机制而非额外 FP 预算。
 
 ## 9. 论文贡献表述
 
-1. 提出轻量的 KV Cache sink 依赖层间衡量方法，只需少量前向统计，不逐层扫描 PPL 或训练参数。
+1. 提出轻量的 KV Cache sink 依赖层间衡量方法，只需少量前向 attention 统计，不逐层扫描 PPL 或训练参数；相比 MultiAlloc [16] 依赖梯度的一阶敏感度刻画，校准成本更低。
 2. 在不改变 KIVI K per-channel、V per-token 量化设定的前提下，实现 token 级层间保护预算分配。
 3. 将“离线决定每层保护多少 token”和“在线 prefill 决定保护哪些 token”解耦，避免把校准样本的 token 位置直接迁移到测试序列。
 4. 提出 decode 延迟量化机制，避免新 token 在重要性未知时直接低比特存储。
@@ -401,7 +411,7 @@ Random / Reverse 证明收益不是任意额外 FP 存储；Attention-only / Qua
 
 ### 10.1 引用与来源说明
 
-- **来自引用论文的知识**：KIVI 的 K per-channel、V per-token 量化和 recent FP window [1]；KVQuant 的 pre-RoPE key 与非均匀量化 [2]；StreamingLLM 的初始 attention sink 与滑动窗口现象 [3]；KVSink 关于初始前缀保护不足和 sink 激活异常的观察 [4]；TurboQuant 的旋转与向量量化 [5]；OSCAR 的旋转类 KV 量化 [6]、HqeKV 的混合压缩思路 [7]、FlashAttention/FlashAttention-2 的 online softmax 与 blocked attention 思想 [8][9]。
+- **来自引用论文的知识**：KIVI 的 K per-channel、V per-token 量化和 recent FP window [1]；KVQuant 的 pre-RoPE key 与非均匀量化 [2]；StreamingLLM 的初始 attention sink 与滑动窗口现象 [3]；KVSink 关于初始前缀保护不足和 sink 激活异常的观察 [4]；TurboQuant 的旋转与向量量化 [5]；OSCAR 的旋转类 KV 量化 [6]、HqeKV 的混合压缩思路 [7]、FlashAttention/FlashAttention-2 的 online softmax 与 blocked attention 思想 [8][9]；MultiAlloc 的层敏感度/Token 重要性 profiling 与固定预算联合分配框架 [16]。
 - **本文提出的指标与机制**：token sink score 的平均 attention 聚合形式、最后 25% query 启发式、top-$M$ 层间 sink mass、量化重构误差组合分数、按比例层间预算分配、静态/动态槽位拆分、decode 延迟量化与动态保留策略、token 级 dual-pool cache。
 - **工程判断**：KIVI/TurboQuant 现有 kernel 对 scattered FP rows 的支持程度需在复现阶段确认；同构 layout 是当前系统实现的约束假设，不作为论文结论。
 
@@ -444,3 +454,7 @@ Random / Reverse 证明收益不是任意额外 FP 存储；Attention-only / Qua
 [14] Austin et al. Program Synthesis with Large Language Models. 2021.
 
 [15] Chen et al. Evaluating Large Language Models Trained on Code. 2021.
+
+#### 层间/多粒度精度分配
+
+[16] Zhou et al. MultiAlloc: Budget-Aware Precision Allocation for KV Cache Quantization. arXiv:2610.18642, 2026.

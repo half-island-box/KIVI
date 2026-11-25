@@ -79,21 +79,19 @@ M0.2 已确定：与用户确认 **L1** —— M1–M5 使用 `Llama-3.1-8B-Inst
 要求：Python ≥ 3.10、NVIDIA GPU、CUDA toolkit，以及 `pyproject.toml` 中锁定的依赖（`torch==2.4.1`、`transformers==4.43.1`、`flash-attn`）。`requirements.txt` 是旧版锁定文件，不作为依据。
 
 ```bash
-# 需要先安装 uv：https://docs.astral.sh/uv/getting-started/installation/
-
-# 创建并激活 Python 3.10 虚拟环境
-uv venv --python 3.10
 source .venv/bin/activate
 
-# 安装主包
-uv pip install -e .
+# 1) 先装 torch(cu124) 和 flash-attn 需要的构建工具
+uv pip install --torch-backend=cu124 "torch==2.4.1" setuptools wheel ninja packaging
 
-# 编译 KIVI CUDA 扩展 kivi_gemv（量化 cache 路径必需）。
-# 需要 NVIDIA GPU、与 torch 匹配的 CUDA toolkit，且 nvcc 在 PATH 中。
-# 必须加 --no-build-isolation：quant/setup.py 会 import torch，
-# 而隔离构建环境只有 setuptools，否则会报
-# ModuleNotFoundError: No module named 'torch'。
-# 修改 quant/csrc/ 后必须重新执行。
+# 2) 关闭构建隔离，用环境里的 torch 编译 flash-attn
+#    需要本机有 nvcc（CUDA toolkit 12.4），编译通常要几十分钟
+uv pip install flash-attn --no-build-isolation
+
+# 3) 装主包；flash-attn 已满足，不会重复构建
+uv pip install --torch-backend=cu124 -e .
+
+# 4) 编译 KIVI 的 CUDA 扩展（同样需要关闭构建隔离）
 cd quant
 uv pip install -e . --no-build-isolation
 cd ..

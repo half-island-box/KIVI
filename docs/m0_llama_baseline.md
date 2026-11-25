@@ -163,12 +163,12 @@ python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 
 ```bash
 bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
-python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_120000_2bits_group32_residual128
+python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_4096_2bits_group32_residual128
 ```
 
 说明：
 
-- `config/model2maxlen.json` 中 Llama-3.1-8B-Instruct 取 LongBench 上游的 120000；若单卡显存不足导致 OOM，作为失败 run 记录原因，不要静默改小 `maxlen`。
+- `config/model2maxlen.json` 中 Llama-3.1-8B-Instruct 已于 2026-11-25 从 LongBench 上游的 120000 下调为 **4096**：当前实验机只有 24GB 的 RTX 3090，120k 无法完成 prefill。这是显式记录的配置偏离，主表与论文需注明“LongBench 截断到 4k”，不能与 120k 结果混表。
 - 预测目录名由 `model_name / max_length / k_bits / group_size / residual_length` 组成，`eval_long_bench.py --model` 必须与之一致。
 - LongBench 的 chat template：Llama-3.1 Instruct 走 `apply_chat_template`；Llama-2-7b 使用原始 prompt。
 

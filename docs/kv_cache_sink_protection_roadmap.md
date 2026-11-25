@@ -183,7 +183,7 @@ Llama 原始项目跑通：
 
 - M0.1 Llama 原始项目跑通：
   - ✅ 静态检查 `python -m compileall models quant utils metrics.py` 通过（macOS / CPU-only 环境）；
-  - ✅ 模型配置补齐：`config/model2maxlen.json` 增加 `Llama-3.1-8B-Instruct` / `Meta-Llama-3.1-8B-Instruct`（120000）与 `Llama-2-7b-ms`（4096），`config/model2path.json` 增加对应别名；
+  - ✅ 模型配置补齐：`config/model2maxlen.json` 增加 `Llama-3.1-8B-Instruct` / `Meta-Llama-3.1-8B-Instruct`（原 120000；2026-11-25 因 3090 24GB 显存下调为 4096）与 `Llama-2-7b-ms`（4096），`config/model2path.json` 增加对应别名；
   - ✅ 兼容性修复：Llama-2 默认 ModelScope id 改为 `modelscope/Llama-2-7b-ms`（原 `LLM-Research/llama-2-7b-hf` 不存在）；Llama-3.x 改走 fast tokenizer（`utils/tokenizer_utils.py`），避免 slow tokenizer 在无根目录 `tokenizer.model` 时报 `TypeError: not a string`；
   - ✅ 基线记录工具 `scripts/m0_baseline.py`（`check` / `env` / `run`）；
   - ✅ 数据集本地优先 + ModelScope：`utils/modelscope_hub.py` 新增 `load_long_bench_task` / `load_gsm8k_split`。下载前依次检查 `--data_dir`（或 `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`）、`<cache_dir>/longbench/data` 与 `<cache_dir>/gsm8k` 的已解压副本、本机 ModelScope snapshot；都没有才下载 LongBench `ZhipuAI/LongBench` 的 `data.zip`（约 114 MB）或 `modelscope/gsm8k` 声明的 jsonl。`pred_long_bench.py` / `example.py` 不再访问 `huggingface.co`（`--data_source hf` 仍可显式切回）；
@@ -278,7 +278,7 @@ bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
 python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
 
 bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
-python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_120000_2bits_group32_residual128
+python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_4096_2bits_group32_residual128
 ```
 
 #### 6. 基线矩阵：每个配置重复 3 次
@@ -370,6 +370,12 @@ python scripts/m0_baseline.py run --name llama2_kivi2_r1 --repeat 1 -- \
 - Hook 只读，不改变模型权重与生成结果；
 - exact mode 用于算法研究，不作为第一阶段效率结论依据；
 - score 缓存使用独立文件，不混入模型 checkpoint。
+- **M1 只新增 `kivi_sink/` 与 `tests/`，不修改 `models/`、`quant/`、`pred_long_bench.py`、`eval_long_bench.py`、`utils/` 的默认执行路径**；M0 的 LongBench / smoke / `mem_spd_test.py` 指标必须能在 M1 后原样复现。
+- exact mode 通过独立的校准进程（独立加载 HF eager/sdpa 模型，或只读 `register_forward_hook` 重算 QK^T）实现；**不得放宽 `LlamaAttention_KIVI` 的 `use_flash=True` 断言，不得让 KIVI 主路径退回 sdpa/eager**。
+- 不在 attention forward 热路径插入统计分支；需要 hook 时只在**校准进程**内注册，基准/生成进程不注册任何 hook。
+- 模块 import 时不修改全局状态（随机种子、`torch.backends.*`、`torch.use_deterministic_algorithms`、默认 dtype 等）；校准 seed 仅在校准进程内设置。
+- 新增依赖只进入测试/校准的可选依赖，**不改变 `pyproject.toml` 中 torch / transformers / flash-attn 的版本约束**。
+- 校准数据加载不改变 `utils/modelscope_hub.py` 等共享 loader 的既有行为；如需扩展，新增参数默认保持现状。
 
 ### 交付物
 
@@ -385,6 +391,8 @@ python scripts/m0_baseline.py run --name llama2_kivi2_r1 --repeat 1 -- \
 - [ ] 能汇总得到 `A_l` 与跨样本稳定性；
 - [ ] exact 与 proxy 模式的 Spearman 相关报告可用；
 - [ ] 校准过程不改变原模型输出。
+- [ ] 路径隔离检查：`git diff <M0 基线冻结 commit>..<M1 commit> -- models/ quant/ pred_long_bench.py eval_long_bench.py utils/` 为空，或只包含已记录且不影响默认执行路径的改动；
+- [ ] M0 回归检查：用 M0 冻结的配置与 seed 重跑 LongBench 与 `mem_spd_test.py`，分数在既定容差内，耗时与峰值显存无系统性变化；若有变化，记录原因并重新基线化，不允许静默覆盖 M0 数字。
 
 ---
 
