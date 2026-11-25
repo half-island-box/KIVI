@@ -6,6 +6,7 @@ import numpy as np
 import random
 import argparse
 from datetime import datetime, timezone
+from itertools import islice
 os.environ["WANDB_DISABLED"] = "true"
 
 from utils.process_args import process_args
@@ -63,7 +64,9 @@ def get_pred(
     out_file=None,
 ):
     preds = []
-    pending = data[start_index:]
+    # HuggingFace Dataset.__getitem__ with a slice returns a dict of columns,
+    # not a Dataset, so use an iterator to skip completed samples.
+    pending = islice(data, start_index, None)
     for json_obj in tqdm(pending, initial=start_index, total=len(data), desc=dataset):
         prompt = prompt_format.format(**json_obj)
         # truncate to fit max_length (we suggest truncate in the middle, since the left and right side may contain crucial instructions)
