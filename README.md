@@ -229,7 +229,7 @@ M1 adds `kivi_sink/` (read-only attention statistics / sink scores) and `tests/`
 
 ```bash
 # Pure-function smoke test, no model or dataset needed (random Q/K tensors)
-python -m kivi_sink.calibration --synthetic \
+python -m kivi_sink.calibration --synthetic --mode both \
     --samples 3 --synthetic-layers 4 --max-length 64 --top-m 2 \
     --output results/sink/calibration/synthetic.json
 

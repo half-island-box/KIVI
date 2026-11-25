@@ -74,6 +74,8 @@ class SyntheticCalibrationTest(unittest.TestCase):
         output = tmp_dir / "synthetic.json"
         argv = [
             "--synthetic",
+            "--mode",
+            "both",
             "--samples",
             "2",
             "--synthetic-layers",
@@ -145,6 +147,39 @@ class SyntheticCalibrationTest(unittest.TestCase):
         with contextlib.redirect_stdout(stdout):
             with self.assertRaises(ValueError):
                 main(["--synthetic", "--model", "some/model"])
+
+    def test_proxy_only_mode_omits_exact_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "proxy.json"
+            argv = [
+                "--synthetic",
+                "--mode",
+                "proxy",
+                "--samples",
+                "2",
+                "--synthetic-layers",
+                "2",
+                "--max-length",
+                "8",
+                "--top-m",
+                "2",
+                "--n-boot",
+                "4",
+                "--output",
+                str(output),
+            ]
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                self.assertEqual(main(argv), 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            for entry in payload["layers"]:
+                self.assertIn("proxy_A_mean", entry)
+                self.assertNotIn("exact_A_mean", entry)
+            self.assertIn(
+                "proxy_layer_A_stability_spearman", payload["correlation"]
+            )
+            self.assertNotIn("token_spearman_mean", payload["correlation"])
 
 
 class CalibrationDataGuardTest(unittest.TestCase):

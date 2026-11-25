@@ -1,5 +1,5 @@
 {
-  "example_note": "Synthetic random Q/K tensors produced by --synthetic; schema illustration only, not a research result.",
+  "example_note": "Synthetic random Q/K tensors produced by --synthetic --mode both; schema illustration only, not a research result.",
   "schema_version": 1,
   "metadata": {
     "created_at": "<removed for a stable committed example>",
@@ -22,7 +22,7 @@
     "model": null,
     "model_source": "modelscope",
     "cache_dir": null,
-    "mode": "exact",
+    "mode": "both",
     "synthetic": true,
     "synthetic_layers": 3,
     "calibration_jsonl": null,

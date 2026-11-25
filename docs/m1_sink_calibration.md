@@ -71,13 +71,13 @@ exact 分数本身已归一化，因此 `A_l` 就是 top-M attention mass 占比
 ### 5.1 CPU 可执行（无需模型/GPU）
 
 ```bash
-# 静态检查 + 单元测试（54 项：causal mask、归一化、top-M、批量/多头聚合、
+# 静态检查 + 单元测试（55 项：causal mask、归一化、top-M、批量/多头聚合、
 # bootstrap 确定性、Spearman、hook 只读性、import 无副作用）
 python -m compileall kivi_sink tests
 python -m unittest discover -s tests -v
 
-# 合成 Q/K 全链路 smoke（生成 JSON + CSV + 可选 token score npz）
-python -m kivi_sink.calibration --synthetic \
+# 合成 Q/K 全链路 smoke（exact + proxy，生成 JSON + CSV + 可选 token score npz）
+python -m kivi_sink.calibration --synthetic --mode both \
     --samples 3 --synthetic-layers 4 --max-length 64 --top-m 2 \
     --output results/sink/calibration/synthetic.json \
     --save-token-scores results/sink/calibration/synthetic.npz

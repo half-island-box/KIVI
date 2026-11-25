@@ -484,12 +484,14 @@ def _collect_synthetic_scores(
     if args.max_length < args.top_m:
         raise ValueError("--max-length must be >= --top-m")
     query_heads, kv_heads, head_dim = 4, 2, 16
+    want_exact = args.mode in ("exact", "both")
+    want_proxy = args.mode in ("proxy", "both")
     generator = torch.Generator()
     results: List[_SampleResult] = []
     for sample_index in range(args.samples):
         generator.manual_seed(args.seed + sample_index)
-        exact: Dict[int, torch.Tensor] = {}
-        proxy: Dict[int, torch.Tensor] = {}
+        exact: Optional[Dict[int, torch.Tensor]] = {} if want_exact else None
+        proxy: Optional[Dict[int, torch.Tensor]] = {} if want_proxy else None
         for layer in range(args.synthetic_layers):
             query = torch.randn(
                 1, query_heads, args.max_length, head_dim, generator=generator
@@ -499,10 +501,12 @@ def _collect_synthetic_scores(
             )
             # Make layers mildly heterogeneous so A_l is not trivially flat.
             key = key * (0.5 + 0.5 * layer)
-            exact[layer] = causal_attention_mass(
-                query, key, args.query_fraction
-            )[0]
-            proxy[layer] = key_norm_scores(key)[0]
+            if exact is not None:
+                exact[layer] = causal_attention_mass(
+                    query, key, args.query_fraction
+                )[0]
+            if proxy is not None:
+                proxy[layer] = key_norm_scores(key)[0]
         results.append(
             _SampleResult(
                 sample_id=f"synthetic-{sample_index}",
