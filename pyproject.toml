@@ -21,7 +21,10 @@ dependencies = [
     "fastchat",
     "protobuf",
     "flash-attn",
-    "datasets",
+    # datasets<2.15 breaks with pyarrow>=21 (PyExtensionType removed) and
+    # misdetects LocalFileSystem with newer fsspec; 2.16.1 is the tested pin.
+    "datasets==2.16.1",
+    "pyarrow>=14,<21",
     "modelscope"
 ]
 
