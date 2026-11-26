@@ -334,6 +334,63 @@ python scripts/m0_baseline.py run --name llama2_kivi2_r1 --repeat 1 -- \
 
 先实现“可观察”，解决所有后续策略依赖的核心数据源。
 
+### M1 架构图
+
+M1 的关键边界是：**校准在独立进程内完成，KIVI 推理路径完全不变**。exact 与 proxy 只是 token score 的两种来源，后续的 top-M、`A_l`、跨样本聚合与相关性报告共用同一套代码。
+
+```mermaid
+flowchart TD
+    subgraph DATA["校准数据（与评测集隔离）"]
+        D1["LongBench narrativeqa（默认，非评测任务）"]
+        D2["--calibration-jsonl（外部 held-out 集）"]
+        GUARD["EVAL_TASKS 泄漏守卫"]
+        D1 --> GUARD
+        D2 --> GUARD
+    end
+
+    subgraph CAL["独立校准进程：kivi_sink/calibration.py（不加载 KIVI 量化路径）"]
+        MODEL["HF AutoModelForCausalLM<br/>eager（exact/both）或 SDPA（proxy）"]
+        GUARD --> MODEL
+
+        MODEL --> EXACT["exact：output_attentions=True<br/>attn [L, H, T, T]"]
+        MODEL --> PROXY["proxy：只读 forward hook<br/>捕获 self_attn.k_proj 输出"]
+
+        EXACT --> AS1["attention_stats.py<br/>attention_mass_from_weights"]
+        PROXY --> AS2["attention_stats.py<br/>key_norm_scores（RoPE 不变）"]
+
+        AS1 --> SCORE["token score [T]<br/>在 heads 与 query 范围上平均"]
+        AS2 --> SCORE
+
+        SCORE --> AL["sink_score.py<br/>每层 top-M → A_l"]
+        AL --> AGG["跨样本聚合：mean / median / std<br/>bootstrap CI / 样本间 Spearman"]
+
+        AS1 -. "both：同一次 eager forward" .-> CORR["exact vs proxy Spearman"]
+        AS2 -. "both：同一次 eager forward" .-> CORR
+    end
+
+    subgraph OUT["产物（独立文件，不写入模型 checkpoint）"]
+        JSON["calibration.json<br/>config / metadata / samples / layers / correlation"]
+        CSV["calibration.csv<br/>逐层 A_l 统计"]
+        NPZ["token_scores.npz（可选）"]
+    end
+    AGG --> JSON
+    AGG --> CSV
+    SCORE --> NPZ
+
+    subgraph KIVI["KIVI 推理 / M0 基线路径（M1 不修改）"]
+        ENTRY["example.py / long_context_example.py<br/>pred_long_bench.py / mem_spd_test.py"]
+        MAIN["*_KIVI 模型 + flash attention<br/>+ 9 元组量化 cache"]
+        ENTRY --> MAIN
+    end
+    CAL -. "无调用 / 无 hook / 无 import" .-> KIVI
+```
+
+读图要点：
+
+- **exact** 走 HF eager 的 `output_attentions=True`，直接得到 causal attention 矩阵；**proxy** 走 SDPA + 只读 `k_proj` hook，用 key norm 作为 flash-compatible 替代。两种模式都不修改模型输出。
+- `both` 模式在同一次 eager forward 中同时收集 exact attention 与 `k_proj`，因此可以逐层报告 token score 的 Spearman 相关性和逐样本 `A_l` 相关性。
+- 所有产物写到 `results/sink/calibration/`，与模型权重、KIVI cache、M0 基线记录分离；校准进程不会向 KIVI 路径注册 hook，也不会改变基准/生成进程。
+
 ### 任务
 
 1. 新建 calibration 模块，不侵入 KIVI 主路径：
