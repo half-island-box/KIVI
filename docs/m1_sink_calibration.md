@@ -23,10 +23,12 @@ kivi_sink/
   attention_stats.py   # exact attention mass / 流式精确计算 / key-norm proxy
   sink_score.py        # top-M、A_l、跨样本聚合、bootstrap CI、Spearman
   calibration.py       # 校准 runner（exact / proxy / both / synthetic）
+  report.py            # 读取校准 JSON，计算 M1 指标与 pass/warn 告警
 tests/
   test_attention_stats.py
   test_sink_score.py
   test_calibration.py
+  test_report.py
 docs/examples/m1_synthetic_calibration.{json,csv}  # 输出 schema 示例（随机张量，非实验结果）
 ```
 
@@ -71,8 +73,8 @@ exact 分数本身已归一化，因此 `A_l` 就是 top-M attention mass 占比
 ### 5.1 CPU 可执行（无需模型/GPU）
 
 ```bash
-# 静态检查 + 单元测试（55 项：causal mask、归一化、top-M、批量/多头聚合、
-# bootstrap 确定性、Spearman、hook 只读性、import 无副作用）
+# 静态检查 + 单元测试（67 项：causal mask、归一化、top-M、批量/多头聚合、
+# bootstrap 确定性、Spearman、hook 只读性、import 无副作用、指标 report 正负例）
 python -m compileall kivi_sink tests
 python -m unittest discover -s tests -v
 
@@ -81,6 +83,11 @@ python -m kivi_sink.calibration --synthetic --mode both \
     --samples 3 --synthetic-layers 4 --max-length 64 --top-m 2 \
     --output results/sink/calibration/synthetic.json \
     --save-token-scores results/sink/calibration/synthetic.npz
+
+# 计算 M1 指标与告警（合成数据只验证指标链路，不代表研究结论）
+python -m kivi_sink.report \
+    --input results/sink/calibration/synthetic.json \
+    --json-out results/sink/calibration/synthetic.report.json
 
 # 路径隔离检查：M1 不修改 KIVI / LongBench 默认执行路径
 git diff 20aa8dd -- models quant pred_long_bench.py eval_long_bench.py utils
@@ -101,11 +108,19 @@ python -m kivi_sink.calibration \
     --mode both --max-length 512 --samples 8 \
     --output results/sink/calibration/llama31_both.json
 
+# 计算 M1 指标并输出告警（A_l 异质性 / 稳定性 / proxy 相关性 / CI 宽度）
+python -m kivi_sink.report \
+    --input results/sink/calibration/llama31_both.json \
+    --min-samples 8 \
+    --json-out results/sink/calibration/llama31_both.report.json
+
 # proxy：长上下文（4096）校准，不物化 attention
 python -m kivi_sink.calibration \
     --model LLM-Research/Meta-Llama-3.1-8B-Instruct \
     --mode proxy --max-length 4096 --samples 16 \
     --output results/sink/calibration/llama31_proxy.json
+python -m kivi_sink.report \
+    --input results/sink/calibration/llama31_proxy.json --min-samples 16
 ```
 
 exact 模式的显存约为 `batch × heads × T² × 每层`，512 token、32 head、32 层的 fp32 attention 合计约 1 GB，适合做诊断；长上下文 `A_l` 应使用 proxy 模式，并先用 `both` 在短窗口验证 proxy 相关性。
@@ -128,11 +143,27 @@ JSON 顶层字段：
 
 示例见 `docs/examples/m1_synthetic_calibration.json`（由随机 Q/K 生成，仅示意 schema）与同名 `.csv`。
 
+### 6.1 指标报告（`kivi_sink.report`）
+
+`report.py` 读取上述 JSON，输出 `verdict`（`pass` / `warn`）与逐项 `checks`：
+
+| 字段 | 含义 |
+|---|---|
+| `coverage` | 可用样本数、跳过数、层数、exact/proxy 是否可用 |
+| `layer_scores.exact/proxy` | `A_l` 的跨层 mean/min/max/range/CV、平均 CI 宽度、`uniform_reference = top_M/T`、`excess_over_uniform` |
+| `proxy_validity` | token Spearman 的 mean/median/正相关层数，以及逐样本层分数 Spearman |
+| `stability` | exact/proxy 的跨样本 `A_l` Spearman |
+| `checks` | 每项指标的 `pass` / `warn` / `skip` 及实际值 |
+| `verdict` | 任一 `warn` 即 `warn`，否则 `pass` |
+
+默认阈值只作工程护栏（token Spearman ≥ 0.5、layer-A Spearman ≥ 0.5、稳定性 ≥ 0.7、样本数 ≥ 3），可用 `--min-token-spearman`、`--min-layer-spearman`、`--min-stability`、`--min-samples`、`--min-al-range`、`--max-ci-width` 覆盖。合成数据上的 warn 是预期现象，只用于验证告警逻辑。
+
 ## 7. 当前验收状态
 
 - [x] 每个样本每层可输出 token score（`--save-token-scores`）；
 - [x] 可汇总 `A_l` 与跨样本稳定性（mean/median/std/bootstrap CI/样本间 Spearman）；
 - [x] exact 与 proxy 的 Spearman 报告路径可用（合成数据已跑通；真实模型数值待 GPU）；
+- [x] M1 指标报告可用：`kivi_sink.report` 输出 A_l 异质性、跨样本稳定性、proxy 相关性、CI 宽度与 `pass/warn` 告警（正负例单元测试覆盖）；
 - [x] 校准不改变原模型输出（hook 只读、`torch.no_grad()`、独立进程；单元测试覆盖）；
 - [x] 路径隔离：`kivi_sink/`、`tests/` 之外无执行路径改动；
 - [ ] Llama-3.1-8B / Llama-2-7b 上的 exact-proxy 相关性数值（待 GPU）；

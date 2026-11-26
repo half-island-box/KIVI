@@ -272,11 +272,18 @@ python -m kivi_sink.calibration \
     --output results/sink/calibration/llama31_proxy.json \
     --save-token-scores results/sink/calibration/llama31_proxy.npz
 
+# Evaluate M1 metrics (A_l heterogeneity, stability, proxy correlation, CI width)
+# and print pass/warn checks; works on any calibration JSON
+python -m kivi_sink.report \
+    --input results/sink/calibration/llama31_both.json \
+    --min-samples 8 \
+    --json-out results/sink/calibration/llama31_both.report.json
+
 # Unit tests (CPU only)
 python -m unittest discover -s tests -v
 ```
 
-Calibration defaults to LongBench `narrativeqa`, which is outside both evaluation task lists; `--calibration-jsonl` accepts a separate held-out set, and evaluation tasks are rejected unless `--allow-eval-task` is passed deliberately. Each run writes a JSON summary plus a sibling CSV (per-layer `A_l` statistics and exact-vs-proxy Spearman). See the [M1 calibration notes](docs/m1_sink_calibration.md) (Chinese) for the schema, query-fraction semantics, and current GPU TODO list.
+Calibration defaults to LongBench `narrativeqa`, which is outside both evaluation task lists; `--calibration-jsonl` accepts a separate held-out set, and evaluation tasks are rejected unless `--allow-eval-task` is passed deliberately. Each run writes a JSON summary plus a sibling CSV (per-layer `A_l` statistics and exact-vs-proxy Spearman). `python -m kivi_sink.report` turns that JSON into M1 metrics — `A_l` heterogeneity vs the uniform `top_m/T` reference, cross-sample stability, proxy validity, bootstrap CI width — and prints provisional pass/warn checks. See the [M1 calibration notes](docs/m1_sink_calibration.md) (Chinese) for the schema, query-fraction semantics, and current GPU TODO list.
 
 ## Repository layout
 

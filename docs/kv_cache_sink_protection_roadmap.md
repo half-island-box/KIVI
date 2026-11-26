@@ -439,7 +439,8 @@ flowchart TD
 - `kivi_sink/attention_stats.py`
 - `kivi_sink/sink_score.py`
 - `kivi_sink/calibration.py`
-- `tests/test_sink_score.py`
+- `kivi_sink/report.py`
+- `tests/test_sink_score.py`、`tests/test_report.py`
 - 校准统计 JSON/CSV 示例
 
 ### 验收标准
@@ -450,6 +451,73 @@ flowchart TD
 - [ ] 校准过程不改变原模型输出。
 - [ ] 路径隔离检查：`git diff <M0 基线冻结 commit>..<M1 commit> -- models/ quant/ pred_long_bench.py eval_long_bench.py utils/` 为空，或只包含已记录且不影响默认执行路径的改动；
 - [ ] M0 回归检查：用 M0 冻结的配置与 seed 重跑 LongBench 与 `mem_spd_test.py`，分数在既定容差内，耗时与峰值显存无系统性变化；若有变化，记录原因并重新基线化，不允许静默覆盖 M0 数字。
+
+### M1 指标验证
+
+校准产物由 `kivi_sink/calibration.py` 生成，统一用 `kivi_sink/report.py` 计算 M1 指标并给出 `pass / warn` 告警。M1 验证的不是精度收益，而是“统计量是否可用”。
+
+#### 指标定义与判读
+
+| 指标 | 来源字段 | 含义 / 判读 |
+|---|---|---|
+| `A_l` | `layers[].{exact,proxy}_A_mean` | 每层 top-M token 的归一化分数占比；exact 模式下即 top-M attention mass |
+| 层间异质性 | `A_l` 的 range / CV / `excess_over_uniform` | range 与 CV 越大，层间差异越明显；`excess_over_uniform = mean(A_l) - top_M/T` 表示相对均匀分配的额外集中度 |
+| 跨样本稳定性 | `correlation.*_layer_A_stability_spearman` | 校准样本之间 `A_l` 排序的一致性；低于阈值说明预算向量可能随样本翻转 |
+| proxy token 相关性 | `correlation.token_spearman_per_layer` | exact 与 key-norm proxy 在逐 token 分数上的 Spearman |
+| proxy 层分数相关性 | `correlation.layer_A_spearman_per_sample` | 两种分数得到的 `A_l` 排序是否一致 |
+| CI 宽度 | `layers[].*_ci_low/high` | bootstrap 均值区间宽度，反映样本量是否足够 |
+
+默认工程护栏：token Spearman ≥ 0.5、layer-A Spearman ≥ 0.5、跨样本稳定性 ≥ 0.7、可用样本数 ≥ 3；均可在命令行覆盖。这些阈值只用于发现实现或数据问题，不作为研究结论。
+
+#### 当前可执行（CPU，无需模型）
+
+```bash
+python -m compileall kivi_sink tests
+python -m unittest discover -s tests -v          # 67 项，含指标 report 的正负例
+
+# 合成数据：验证指标计算与告警链路（随机 Q/K，不是研究信号）
+python -m kivi_sink.calibration --synthetic --mode both \
+    --samples 3 --synthetic-layers 4 --max-length 64 --top-m 2 \
+    --output results/sink/calibration/synthetic.json
+python -m kivi_sink.report \
+    --input results/sink/calibration/synthetic.json \
+    --min-samples 3 \
+    --json-out results/sink/calibration/synthetic.report.json
+```
+
+合成数据的 proxy 相关性与稳定性通常低于阈值，这是预期结果：它只证明 report 的告警逻辑有效，不能据此判断 key-norm proxy 在真实模型上无效。
+
+#### 研究指标（GPU，待执行）
+
+```bash
+# 1) exact 与 proxy 在同一次 eager forward 中采集
+python -m kivi_sink.calibration \
+    --model LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --mode both --max-length 512 --samples 8 \
+    --output results/sink/calibration/llama31_both.json \
+    --save-token-scores results/sink/calibration/llama31_both.npz
+
+# 2) 计算 M1 指标与告警
+python -m kivi_sink.report \
+    --input results/sink/calibration/llama31_both.json \
+    --min-samples 8 \
+    --json-out results/sink/calibration/llama31_both.report.json
+
+# 3) 长上下文 proxy 校准（不物化 attention）
+python -m kivi_sink.calibration \
+    --model LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --mode proxy --max-length 4096 --samples 16 \
+    --output results/sink/calibration/llama31_proxy.json
+python -m kivi_sink.report \
+    --input results/sink/calibration/llama31_proxy.json --min-samples 16
+```
+
+判读顺序：
+
+1. 先看 `layer_heterogeneity` 与 `excess_over_uniform`。若 `A_l` 接近 `top_M/T` 且层间 range 很小，说明层间 sink 差异不显著，按风险表转向 `E_l` 或 head 级统计。
+2. 再看 `proxy_token_spearman` / `proxy_layer_spearman`。若相关性不足，exact 仅用于短窗口诊断，长上下文结论必须换更强 proxy（如 logit-LSE / activation outlier）。
+3. 同时看 `cross_sample_stability` 与 `ci_width`。稳定性低时增加校准样本、改用 median 聚合或缩小 query 范围，并报告多校准集一致性。
+4. 最后执行 M0 回归与路径隔离检查；`report` 只读取校准 JSON，不加载模型、不修改任何基线产物。
 
 ---
 
