@@ -13,6 +13,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name_or_path", type=str,
                     default="modelscope/Llama-2-7b-ms")
 parser.add_argument("--cache_dir", type=str, default="./cached_models")
+parser.add_argument("--batch_size", type=int, default=96,
+                    help="sequences generated in parallel (default 96, sized for a 7B model; "
+                         "an 8B model on a 24GB card needs a smaller batch)")
+parser.add_argument("--k_bits", type=int, default=2, choices=(2, 4, 8, 16),
+                    help="KV cache bits; 16 on both sides measures the FP16 baseline")
+parser.add_argument("--v_bits", type=int, default=2, choices=(2, 4, 8, 16))
 add_model_source_argument(parser)
 add_device_argument(parser)
 args = parser.parse_args()
@@ -22,11 +28,11 @@ if device.type != "cuda":
     parser.error("mem_spd_test.py measures CUDA memory/latency and requires a CUDA --device")
 device_map = device_map_for(args.device, device)
 
-K_BITS = 2
-V_BITS = 2
+K_BITS = args.k_bits
+V_BITS = args.v_bits
 GROUP_SIZE = 32
 RESIDUAL_LENGTH = 128
-BATCH_SIZE = 96
+BATCH_SIZE = args.batch_size
 PATH_TO_YOUR_SAVE_DIR = './cached_models'
 
 model_name_or_path = args.model_name_or_path
@@ -41,6 +47,9 @@ config.k_bits = K_BITS # current support 2/4 bit for KV Cache
 config.v_bits = V_BITS # current support 2/4 bit for KV Cache
 config.group_size = GROUP_SIZE
 config.residual_length = RESIDUAL_LENGTH # the number of recent fp16 tokens
+# The KIVI attention path asserts use_flash (models/llama_kivi.py), so it must be
+# set before from_pretrained, exactly as example.py / pred_long_bench.py do.
+config.use_flash = True
 
 if K_BITS < 16 and V_BITS < 16:
     model = LlamaForCausalLM_KIVI.from_pretrained(
@@ -59,6 +68,7 @@ else:
         cache_dir=CACHE_DIR,
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
+        use_flash_attention_2=True,
         device_map=device_map,
     )
 
@@ -76,7 +86,8 @@ for _ in range(batch_size):
     context.append(string[:-1])
 inputs = tokenizer(context, return_tensors="pt").to(device)
 input_ids = inputs['input_ids']
-print(f"bs: {batch_size}, seqlen: {input_ids.shape[1]}+{output_length}\nmodel:{model_name_or_path}")
+print(f"bs: {batch_size}, seqlen: {input_ids.shape[1]}+{output_length}, "
+      f"k_bits: {K_BITS}, v_bits: {V_BITS}\nmodel:{model_name_or_path}")
 torch.cuda.reset_peak_memory_stats(device)
 with torch.no_grad():
     torch.cuda.synchronize(device)
