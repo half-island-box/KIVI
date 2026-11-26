@@ -227,6 +227,26 @@ Raw records land in `results/m0_baselines/` (git-ignored). The curated status, f
 
 M1 adds `kivi_sink/` (read-only attention statistics / sink scores) and `tests/`. It does not touch the KIVI inference path: calibration loads a separate Hugging Face model in its own process, and the `.npz` / JSON artifacts stay outside the model checkpoint.
 
+```mermaid
+flowchart LR
+    subgraph CAL["Separate calibration process (kivi_sink/)"]
+        DATA["LongBench narrativeqa<br/>or --calibration-jsonl"] --> MODEL["HF model<br/>eager (exact / both) or SDPA (proxy)"]
+        MODEL --> EXACT["exact: output_attentions<br/>attention mass"]
+        MODEL --> PROXY["proxy: read-only k_proj hook<br/>key norm (RoPE-invariant)"]
+        EXACT --> SCORE["token score [T]<br/>heads × query range"]
+        PROXY --> SCORE
+        SCORE --> AL["top-M per layer -> A_l"]
+        AL --> OUT["JSON + CSV<br/>optional token-score NPZ"]
+        EXACT -. "both: same forward, Spearman" .-> PROXY
+    end
+
+    subgraph KIVI["KIVI / M0 path (unchanged)"]
+        ENTRY["example.py / long_context_example.py<br/>pred_long_bench.py / mem_spd_test.py"] --> CACHE["*_KIVI + flash attention<br/>+ 9-tuple quantized cache"]
+    end
+
+    CAL -. "no hooks / no imports / no calls" .-> KIVI
+```
+
 ```bash
 # Pure-function smoke test, no model or dataset needed (random Q/K tensors)
 python -m kivi_sink.calibration --synthetic --mode both \
