@@ -16,6 +16,9 @@ parser.add_argument("--cache_dir", type=str, default="./cached_models")
 parser.add_argument("--batch_size", type=int, default=96,
                     help="sequences generated in parallel (default 96, sized for a 7B model; "
                          "an 8B model on a 24GB card needs a smaller batch)")
+parser.add_argument("--prompt_length", type=int, default=256,
+                    help="prompt length in TOKENS (default 256; keep it above KIVI's "
+                         "residual_length=128 so the quantized V path is exercised)")
 parser.add_argument("--k_bits", type=int, default=2, choices=(2, 4, 8, 16),
                     help="KV cache bits; 16 on both sides measures the FP16 baseline")
 parser.add_argument("--v_bits", type=int, default=2, choices=(2, 4, 8, 16))
@@ -76,16 +79,23 @@ tokenizer = load_llama_tokenizer(model_path, model_name_or_path)
 
 model.to(device).eval()
 
-context = []
 batch_size = BATCH_SIZE
-prompt_lenth = 160
+prompt_length = args.prompt_length
 output_length = 338
 num_repeats = 3
-for _ in range(batch_size):
-    string = 't,' * (prompt_lenth // 2)
-    context.append(string[:-1])
-inputs = tokenizer(context, return_tensors="pt").to(device)
-input_ids = inputs['input_ids']
+
+# Build the synthetic prompt by repeating a short token unit, so the measured
+# length is exactly --prompt_length *tokens*. The old `'t,' * 80` form was 159
+# characters, which tokenized to roughly half that many tokens -- short enough
+# to stay under residual_length and take a different KIVI path than real work.
+unit_ids = tokenizer("t,", add_special_tokens=False)["input_ids"]
+if not unit_ids:
+    raise SystemExit("tokenizer produced no tokens for the synthetic prompt")
+ids = (unit_ids * (prompt_length // len(unit_ids) + 1))[:prompt_length]
+if tokenizer.bos_token_id is not None:
+    ids[0] = tokenizer.bos_token_id
+input_ids = torch.tensor([ids] * batch_size, dtype=torch.long, device=device)
+
 print(f"bs: {batch_size}, seqlen: {input_ids.shape[1]}+{output_length}, "
       f"k_bits: {K_BITS}, v_bits: {V_BITS}\nmodel:{model_name_or_path}")
 torch.cuda.reset_peak_memory_stats(device)
@@ -93,7 +103,7 @@ with torch.no_grad():
     torch.cuda.synchronize(device)
     st = time.time()
     for i in range(num_repeats):
-        outputs = model.generate(**inputs, max_new_tokens=output_length)
+        outputs = model.generate(input_ids, max_new_tokens=output_length)
     torch.cuda.synchronize(device)
     print(f'used time: {(time.time() - st) / num_repeats * 1000} ms')
     used_mem = torch.cuda.max_memory_allocated(device)
