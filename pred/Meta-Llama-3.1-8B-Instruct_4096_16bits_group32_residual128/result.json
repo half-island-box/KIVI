@@ -1,0 +1,10 @@
+{
+    "multi_news": 27.12,
+    "trec": 68.5,
+    "repobench-p": 55.03,
+    "triviaqa": 89.26,
+    "qasper": 41.78,
+    "qmsum": 21.73,
+    "samsum": 44.82,
+    "lcc": 62.3
+}
