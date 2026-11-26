@@ -377,9 +377,13 @@ class LlamaFlashAttention_KIVI(LlamaAttention_KIVI):
             value_states_full = torch.cat([value_states_full, value_states], dim=2)
             value_full_length = value_states_full.shape[-2]
             if value_states_quant is None:
-                attn_output = torch.matmul(attn_weights, value_states_full)
+                # No V has been quantized yet (KV <= residual_length), so the FP
+                # segment holds every token. repeat_kv is required for GQA: without
+                # it attn_weights [B, nh, q, T] meets value_states_full
+                # [B, nh_kv, T, hd] and matmul fails on dim 1.
+                attn_output = torch.matmul(attn_weights, repeat_kv(value_states_full, self.num_key_value_groups))
             else:
-                attn_output = cuda_bmm_fA_qB_outer(self.group_size, attn_weights[:, :, :, :-value_full_length], value_states_quant, 
+                attn_output = cuda_bmm_fA_qB_outer(self.group_size, attn_weights[:, :, :, :-value_full_length], value_states_quant,
                                                 value_scale, value_mn, self.v_bits)
                 attn_output += torch.matmul(attn_weights[:, :, :, -value_full_length:], repeat_kv(value_states_full, self.num_key_value_groups))
             attn_output = attn_output.transpose(1, 2).contiguous()
