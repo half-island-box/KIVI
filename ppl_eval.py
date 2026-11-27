@@ -13,19 +13,32 @@ between two quantization settings is informative.
 
 Measurement contract
 --------------------
-- The corpus is tokenized once and cut into non-overlapping windows of
-  ``--max_length`` (default 4096, matching ``model2maxlen`` for LongBench on
-  this machine).
-- Every window is a fresh prefill (``past_key_values=None``, ``use_cache=True``)
-  on an empty cache, so the run exercises exactly the KIVI prefill path --
-  flash attention + quantized segments + the FP residual window -- that M3 is
-  meant to evaluate.  Decode-side quantization loss is out of scope here; that
-  belongs to the generation tasks in M4.
-- Only the first token of each window is excluded from the loss.  The
-  convention is identical for FP16 and KIVI, so the comparison stays fair.
-- Logits are consumed in ``--logit_chunk`` position slices and upcast to fp32
-  per slice.  Materializing ``T x vocab`` logits in one go is exactly what
-  forced LongBench down to 4k, so do not remove the chunking.
+The loss must be measured where the quantized cache is actually *read*.
+
+KIVI's prefill attention runs on the freshly projected full-precision K/V
+(``models/llama_kivi.py``: ``attn_output = self._flash_attention_forward(...)``
+happens before the tensors are packed into the cache).  The packed cache is only
+consumed on the following steps.  Therefore a plain "one prefill per window,
+cache discarded" perplexity is bit-identical for 2-bit, 4-bit and FP16 -- it
+never touches the quantized data.  Any prefill-only metric (logit deltas,
+hidden-state deltas) has the same blind spot.
+
+So each window is measured as:
+
+1. one prefill over ``--prefill_length`` tokens (``past_key_values=None``),
+   scoring the token that follows the prefix;
+2. ``--decode_length - 1`` teacher-forced single-token steps: the true next
+   token is fed back with the cache attached, so every step reads the quantized
+   history and scores the token after it.
+
+Windows are spread evenly over the corpus, ``--windows`` of them, and are
+independent (one cache per window).  The reported number is therefore a
+"continuation loss after a 512-token prefix", not the standard WikiText PPL --
+it is comparable across quantization settings, not with published PPL tables.
+
+Chunked prefill (feeding a whole chunk *with* a past cache) is not an option
+here: the KIVI decode branch asserts ``value_full_length == residual_length + 1``
+(``models/llama_kivi.py``), i.e. it only supports one new token per step.
 
 Data resolution order (mirrors ``utils/modelscope_hub.py``)
 -----------------------------------------------------------
@@ -92,7 +105,10 @@ def _log(message):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="WikiText-2 perplexity for KIVI vs FP16 (prefill path only)."
+        description=(
+            "WikiText-2 continuation loss for KIVI vs FP16, measured on teacher-forced "
+            "decode steps so the quantized cache is actually read."
+        )
     )
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--cache_dir", type=str, default=None)
@@ -107,14 +123,14 @@ def build_parser():
     parser.add_argument("--v_bits", type=int, default=2, choices=(2, 4, 8, 16))
     parser.add_argument("--group_size", type=int, default=32)
     parser.add_argument("--residual_length", type=int, default=128)
-    parser.add_argument("--max_length", type=int, default=4096,
-                        help="window length in tokens (default 4096, matching LongBench)")
-    parser.add_argument("--batch_size", type=int, default=1,
-                        help="windows per forward; >1 is not validated for the KIVI path")
-    parser.add_argument("--logit_chunk", type=int, default=512,
-                        help="positions per logits slice; caps the fp32 upcast")
-    parser.add_argument("--max_windows", type=int, default=0,
-                        help="cap the number of windows (0 = all)")
+    parser.add_argument("--prefill_length", type=int, default=512,
+                        help="prefix tokens fed as one prefill (default 512)")
+    parser.add_argument("--decode_length", type=int, default=2048,
+                        help="teacher-forced steps scored per window (default 2048)")
+    parser.add_argument("--windows", type=int, default=8,
+                        help="number of independent windows spread over the corpus")
+    parser.add_argument("--batch_size", type=int, default=8,
+                        help="windows decoded together; caps the prefill logits tensor")
     parser.add_argument("--data_file", type=str, default=None,
                         help="local .txt, or .jsonl with a 'text' field")
     parser.add_argument("--dataset", type=str, default=DEFAULT_DATASET,
@@ -293,38 +309,64 @@ def tokenize_corpus(tokenizer, text):
     return ids
 
 
-def window_starts(num_tokens, window, max_windows=0):
-    starts = list(range(0, num_tokens - window + 1, window))
-    if max_windows:
-        starts = starts[:max_windows]
+def window_starts(num_tokens, span, windows):
+    """Evenly spaced start offsets for ``windows`` independent segments."""
+    max_start = num_tokens - span
+    if windows < 1 or max_start < 0:
+        return []
+    if windows == 1:
+        return [0]
+    step = max_start / (windows - 1)
+    starts = sorted({int(round(index * step)) for index in range(windows)})
     return starts
 
 
-def window_nll(model, input_ids, logit_chunk):
-    """Summed NLL over one batch of equal-length windows."""
-    import torch
+def segment_nll(model, input_ids, prefill_length, decode_length, progress=None):
+    """Summed NLL over the decode segment of a batch of equal-length windows.
+
+    ``input_ids`` is ``[batch, prefill_length + decode_length]``.  The prefix is
+    fed in one prefill; every following token is fed back one at a time with the
+    cache attached, so each scored position reads the (quantized) history.
+    """
     import torch.nn.functional as F
 
-    outputs = model(input_ids=input_ids, use_cache=True)
-    logits = outputs.logits
-    length = input_ids.shape[1]
-    total = 0.0
-    for start in range(0, length - 1, logit_chunk):
-        stop = min(start + logit_chunk, length - 1)
-        chunk = logits[:, start:stop].float()
-        targets = input_ids[:, start + 1:stop + 1]
-        total += F.cross_entropy(chunk.transpose(1, 2), targets, reduction="sum").item()
-    del logits, outputs
+    outputs = model(input_ids=input_ids[:, :prefill_length], use_cache=True)
+    cache = outputs.past_key_values
+    total = F.cross_entropy(
+        outputs.logits[:, -1].float(), input_ids[:, prefill_length], reduction="sum"
+    ).item()
+    del outputs
+
+    for step in range(1, decode_length):
+        token = input_ids[:, prefill_length + step - 1:prefill_length + step]
+        outputs = model(input_ids=token, past_key_values=cache, use_cache=True)
+        cache = outputs.past_key_values
+        total += F.cross_entropy(
+            outputs.logits[:, -1].float(), input_ids[:, prefill_length + step], reduction="sum"
+        ).item()
+        del outputs
+        if progress is not None:
+            progress(step + 1, decode_length)
+
+    del cache
     return total
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.batch_size < 1:
-        parser.error("--batch_size must be >= 1")
-    if args.logit_chunk < 1:
-        parser.error("--logit_chunk must be >= 1")
+    for name in ("prefill_length", "decode_length", "windows", "batch_size"):
+        if getattr(args, name) < 1:
+            parser.error(f"--{name} must be >= 1")
+    if args.json_out and args.reference:
+        same = os.path.abspath(os.path.expanduser(args.json_out)) == os.path.abspath(
+            os.path.expanduser(args.reference)
+        )
+        if same:
+            parser.error(
+                "--reference and --json_out point at the same file; that silently "
+                "produces a zero delta"
+            )
 
     import torch
     from utils.device_utils import resolve_device
@@ -344,14 +386,17 @@ def main(argv=None):
 
     text = load_corpus(args)
     ids = tokenize_corpus(tokenizer, text)
-    starts = window_starts(len(ids), args.max_length, args.max_windows)
+    span = args.prefill_length + args.decode_length
+    starts = window_starts(len(ids), span, args.windows)
     if not starts:
         raise SystemExit(
-            f"corpus has {len(ids)} tokens, fewer than one {args.max_length}-token window"
+            f"corpus has {len(ids)} tokens, fewer than one "
+            f"{span}-token window ({args.prefill_length} prefill + {args.decode_length} decode)"
         )
     _log(
         f"corpus tokens: {len(ids)}, windows: {len(starts)} "
-        f"of {args.max_length} tokens, k_bits={args.k_bits}, v_bits={args.v_bits}"
+        f"({args.prefill_length} prefill + {args.decode_length} decode each), "
+        f"k_bits={args.k_bits}, v_bits={args.v_bits}"
     )
 
     model = load_model(args, model_path, device)
@@ -361,19 +406,25 @@ def main(argv=None):
     started = time.perf_counter()
     total_nll = 0.0
     total_tokens = 0
+    log_every = max(args.decode_length // 10, 1)
+
+    def progress(step, total):
+        if step % log_every == 0 or step == total:
+            _log(f"  decode {step}/{total}")
+
     with torch.no_grad():
         for index in range(0, len(starts), args.batch_size):
             batch = starts[index:index + args.batch_size]
             input_ids = torch.tensor(
-                [ids[start:start + args.max_length] for start in batch],
+                [ids[start:start + span] for start in batch],
                 dtype=torch.long,
                 device=device,
             )
-            total_nll += window_nll(model, input_ids, args.logit_chunk)
-            total_tokens += input_ids.shape[0] * (input_ids.shape[1] - 1)
-            done = index + len(batch)
-            if done % max(len(starts) // 10, 1) == 0 or done == len(starts):
-                _log(f"windows {done}/{len(starts)}")
+            _log(f"window batch {index // args.batch_size + 1} ({len(batch)} windows)")
+            total_nll += segment_nll(
+                model, input_ids, args.prefill_length, args.decode_length, progress
+            )
+            total_tokens += input_ids.shape[0] * args.decode_length
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     elapsed_s = time.perf_counter() - started
@@ -403,6 +454,11 @@ def main(argv=None):
         print(f"reference: {args.reference}")
         print(f"reference ppl: {ref_ppl:.4f}")
         print(f"delta: {delta:+.4f} ({100.0 * (ppl / ref_ppl - 1.0):+.2f}%)")
+        if delta == 0.0:
+            print(
+                "warning: delta is exactly 0 -- --reference probably points at this "
+                "run's own output, or both runs used the same k_bits"
+            )
 
     record = {
         "dataset": args.dataset,
@@ -415,12 +471,14 @@ def main(argv=None):
         "v_bits": args.v_bits,
         "group_size": args.group_size,
         "residual_length": args.residual_length,
-        "max_length": args.max_length,
+        "prefill_length": args.prefill_length,
+        "decode_length": args.decode_length,
         "windows": len(starts),
         "tokens": total_tokens,
         "nll_sum": total_nll,
         "mean_nll": mean_nll,
         "ppl": ppl,
+        "metric": "continuation-loss (prefix prefill + teacher-forced decode)",
         "dtype": "float16",
         "device": str(device),
         "seconds": elapsed_s,
