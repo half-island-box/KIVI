@@ -33,8 +33,21 @@ Data resolution order (mirrors ``utils/modelscope_hub.py``)
    with a ``text`` field.  Always works, no network.
 2. ``<KIVI_DATA_DIR>/datasets/wikitext/<subset>_<split>.txt`` -- a cached plain
    text file from an earlier run.
-3. ``MsDataset.load('modelscope/wikitext', ...)`` -- cached to (2) after the
-   first download.
+3. A HuggingFace dataset script mirrored by ModelScope (``modelscope/wikitext``
+   ships ``wikitext.py`` but no corpus): ``datasets.load_dataset`` is pointed at
+   that local directory, which downloads the split from the URL the script
+   hardcodes.  The result is cached to (2) so later runs stay offline.
+
+Step 3 deliberately avoids ``modelscope.msdatasets``: its
+``hf_datasets_util.py`` does ``from datasets import LargeList``, which fails on
+``datasets==2.16.1`` (the version this repo pins) with
+``ImportError: cannot import name 'LargeList'``.  ``datasets.load_dataset`` on a
+local script directory has no such problem.
+
+Note on provenance: the corpus itself comes from the upstream URL hardcoded in
+that script (``s3.amazonaws.com/research.metamind.io``); ModelScope only mirrors
+the loader.  That is the one unavoidable exception to the "datasets via
+ModelScope only" rule, and should be recorded wherever the environment is.
 
 Examples
 --------
@@ -104,7 +117,8 @@ def build_parser():
                         help="cap the number of windows (0 = all)")
     parser.add_argument("--data_file", type=str, default=None,
                         help="local .txt, or .jsonl with a 'text' field")
-    parser.add_argument("--dataset", type=str, default=DEFAULT_DATASET)
+    parser.add_argument("--dataset", type=str, default=DEFAULT_DATASET,
+                        help="ModelScope dataset repo id; used only in the download hint")
     parser.add_argument("--subset", type=str, default=DEFAULT_SUBSET)
     parser.add_argument("--split", type=str, default=DEFAULT_SPLIT)
     parser.add_argument("--reference", type=str, default=None,
@@ -140,18 +154,46 @@ def _read_text(path):
         return handle.read()
 
 
-def _load_from_modelscope(dataset, subset, split):
+def _find_dataset_script(cache_dir):
+    """Return the mirrored ``wikitext.py`` loader path, if present.
+
+    ``modelscope download --dataset modelscope/wikitext`` puts ``wikitext.py``,
+    ``dataset_infos.json`` and ``README.md`` there -- but no corpus, which the
+    script fetches itself at load time.
+    """
+    for candidate in (
+        os.path.join(cache_dir, "wikitext.py"),
+        os.path.join(cache_dir, "wikitext", "wikitext.py"),
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def _load_via_dataset_script(script_path, subset, split):
+    """Run ``datasets.load_dataset`` against a local dataset script."""
     try:
-        from modelscope.msdatasets import MsDataset
-    except Exception as exc:  # pragma: no cover - depends on the host
+        from datasets import load_dataset
+    except ImportError as exc:  # pragma: no cover - depends on the host
         raise SystemExit(
-            "no local WikiText copy and modelscope is unavailable "
-            f"({type(exc).__name__}: {exc}).\n"
+            f"datasets is not importable ({type(exc).__name__}: {exc}).\n"
             "Pass --data_file <test.txt|test.jsonl> to use a local corpus."
         ) from exc
-    _log(f"loading {dataset} subset={subset} split={split} from ModelScope")
-    dataset_obj = MsDataset.load(dataset, subset_name=subset, split=split)
-    return "\n".join(str(row.get("text", "")) for row in dataset_obj)
+
+    _log(f"loading {subset}/{split} through {script_path}")
+    try:
+        dataset_obj = load_dataset(script_path, subset, split=split, trust_remote_code=True)
+    except TypeError:
+        # Older datasets releases do not accept trust_remote_code here.
+        dataset_obj = load_dataset(script_path, subset, split=split)
+
+    try:
+        texts = dataset_obj["text"]
+    except (KeyError, TypeError) as exc:
+        raise SystemExit(
+            f"the dataset script produced no 'text' column ({type(exc).__name__}: {exc})"
+        ) from exc
+    return "\n".join(str(value) for value in texts)
 
 
 def load_corpus(args):
@@ -169,11 +211,25 @@ def load_corpus(args):
         _log(f"corpus: {cached} (cached)")
         return _read_text(cached)
 
-    text = _load_from_modelscope(args.dataset, args.subset, args.split)
+    script_path = _find_dataset_script(cache_dir)
+    if script_path is None:
+        raise SystemExit(
+            "no WikiText corpus found.\n"
+            f"  expected a cached text file at {cached}\n"
+            f"  expected a dataset script under {cache_dir}\n"
+            "Fetch the ModelScope mirror first (the script does the rest):\n"
+            f"    modelscope download --dataset {args.dataset} --local_dir {cache_dir}\n"
+            "or download the raw split by hand and pass --data_file:\n"
+            "    curl -L -O "
+            "https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-raw-v1.zip\n"
+            "    unzip wikitext-2-raw-v1.zip   # -> wikitext-2-raw-v1/test.txt"
+        )
+
+    text = _load_via_dataset_script(script_path, args.subset, args.split)
     os.makedirs(cache_dir, exist_ok=True)
     with open(cached, "w", encoding="utf-8") as handle:
         handle.write(text)
-    _log(f"corpus: {cached} (downloaded and cached)")
+    _log(f"corpus: {cached} (loaded through the dataset script, cached for offline runs)")
     return text
 
 
