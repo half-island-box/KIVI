@@ -60,7 +60,7 @@ Design constraints:
 | M6 | Efficiency systematization and kernel prototype | Not started |
 | M7 | Ablations, paper, and reproducibility package | Not started |
 
-M0.2 is settled: **L1** was confirmed with the user — M1–M5 run on `Llama-3.1-8B-Instruct` with `Llama-2-7b-hf` as the MHA regression model, and Qwen2.5 is deferred to M5.5. M0.1/M0.3 are partially done: the static check passes, the Llama configs and `scripts/m0_baseline.py` are in place, while the CUDA extension, examples, LongBench smoke, and three-repeat baselines await a GPU host. The upstream KIVI implementation remains the executable baseline for now.
+M0.2 is settled: **L1** was confirmed with the user — M1–M5 run on `Llama-3.1-8B-Instruct` as the only model, Qwen2.5 is deferred to M5.5, and the `Llama-2-7b` MHA regression was paused on 2026-11-26. M0.1/M0.3 are partially done: the static check passes, the Llama configs and `scripts/m0_baseline.py` are in place, and the Llama-3.1-8B LongBench baselines (FP16 51.32 / KIVI-2bit 50.73 / KIVI-4bit 51.18) have been predicted and scored and frozen as **`baseline_v1`** — see the [M0 Llama baseline record](docs/m0_llama_baseline.md) for the per-task numbers and caveats. Still open: the example scripts, peak-memory measurement, and a re-run with three repeats (`baseline_v2`).
 
 ## Baseline: what runs today
 

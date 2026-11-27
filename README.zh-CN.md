@@ -60,7 +60,7 @@ KIVI 将 Key Cache 按通道量化、Value Cache 按 token 量化到 2/4 bit，�
 | M6 | 效率系统化与 kernel 原型 | 未开始 |
 | M7 | 消融、论文与复现包 | 未开始 |
 
-M0.2 已确定：与用户确认 **L1** —— M1–M5 使用 `Llama-3.1-8B-Instruct`，`Llama-2-7b-hf` 作为 MHA 回归模型，Qwen2.5 后置到 M5.5。M0.1/M0.3 部分完成：静态检查通过，Llama 配置与 `scripts/m0_baseline.py` 已就绪；CUDA 扩展、示例脚本、LongBench smoke 与 3 次重复基线仍待 GPU 机器执行。在此之前，上游 KIVI 实现是唯一可执行的基线。
+M0.2 已确定：与用户确认 **L1** —— M1–M5 只在 `Llama-3.1-8B-Instruct` 上做实验，Qwen2.5 后置到 M5.5，`Llama-2-7b` 的 MHA 回归角色自 2026-11-26 起暂停。M0.1/M0.3 部分完成：静态检查通过，Llama 配置与 `scripts/m0_baseline.py` 已就绪，Llama-3.1-8B 的 LongBench 基线（FP16 51.32 / KIVI-2bit 50.73 / KIVI-4bit 51.18）已完成预测与评分，并冻结为 **`baseline_v1`**——逐任务分数与限定条件见 [M0 Llama 基线记录](docs/m0_llama_baseline.md)。仍待补：示例脚本、峰值显存测量，以及 3 次重复的重跑（`baseline_v2`）。
 
 ## 当前可运行的基线：KIVI
 

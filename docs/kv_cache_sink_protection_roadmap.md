@@ -29,7 +29,7 @@
 4. **Decode 延迟量化机制**：尚未实现解码期 score 更新、观察窗、滑出决策、动态 FP slot 与低频重排。
 5. **Fake-quant 精度原型**：尚未提供“protected token 保持 FP、其他 token KIVI quantize/dequantize 后拼回”的独立原型。
 6. **逻辑双池 cache 与分段 attention**：尚未实现 FP protected pool、KIVI quantized pool、recent FP window 的三段统一索引与 online softmax 合并。
-7. **基准扩展**：当前 runner 只有 LongBench 与 synthetic efficiency，尚缺 PPL、RULER/NIAH、GSM8K、MBPP/HumanEval 等研究方案要求的评测。
+7. **基准扩展**：当前 runner 已有 LongBench、synthetic efficiency 与 WikiText-2 PPL（`ppl_eval.py`），尚缺 RULER/NIAH、GSM8K、MBPP/HumanEval 等研究方案要求的评测。
 8. **可复现实验管理**：当前 CSV 主要记录量化配置和总体指标，尚不足以完整记录 sink 策略、预算向量、校准集、随机种子、校准开销和 metadata 开销。
 
 ---
@@ -100,9 +100,9 @@ Stage E: 可系统化
 3. 示例链路：
    - `python example.py`（Llama-3.1-8B-Instruct，GSM8K 5-shot）；
    - `python long_context_example.py`（passkey 检索）；
-   - `python mem_spd_test.py`（耗时与 peak memory，脚本内为 Llama-2-7b）。
+   - `python mem_spd_test.py`（耗时与 peak memory；脚本默认是 Llama-2-7b，当前只做 Llama-3.1-8B，需显式传 `--model_name_or_path LLM-Research/Meta-Llama-3.1-8B-Instruct`）。
 4. LongBench 链路：
-   - 用 Llama-3.1-8B-Instruct 与 Llama-2-7b-hf 各跑一组 smoke；
+   - 用 Llama-3.1-8B-Instruct 跑一组 smoke（Llama-2-7b 自 2026-11-26 起暂停，见 M0.2）；
    - 确认预测与评分链路正常，记录异常样本与长度。
 5. 固定 KIVI 参数并记录：`k_bits`、`v_bits`、`group_size`、`residual_length`，确认 `residual_length` 是 `group_size` 的整数倍。
 6. 整理 Llama 路径限制清单：
@@ -113,7 +113,7 @@ Stage E: 可系统化
 
 #### M0.2 确认模型策略（Llama-first，Qwen 后置）
 
-1. 与用户确认第 10 节的 L1 执行模式：M1–M5 使用 `meta-llama/Llama-3.1-8B-Instruct` 作为唯一开发宿主；`meta-llama/Llama-2-7b-hf` 作为 MHA 回归模型。
+1. 与用户确认第 10 节的 L1 执行模式：M1–M5 只使用 `meta-llama/Llama-3.1-8B-Instruct` 作为唯一模型。**Llama-2-7b（原 MHA 回归角色）自 2026-11-26 起暂停**，不进入 M0–M5 的任何实验、基线表与验收；MHA / eager 路径在本轮不做验证，留作后续需要时再补。
 2. 确认 Qwen2.5 的角色：`Qwen/Qwen2.5-1.5B-Instruct` 用于 M5.5 移植开发与低成本复跑，`Qwen/Qwen2.5-7B-Instruct` 为最终主模型候选，但**不在 M0–M5 执行**。
 3. 产出选型记录：模型 revision、选择理由、M5.5 的 Go/No-Go 条件与降级方案（见 10.3–10.4）。
 4. 明确不做的事：M0 不新增 `models/qwen2_kivi.py`，不修改模型 loader，不引入 Qwen 专用 tokenizer/chat template 逻辑。
@@ -123,6 +123,11 @@ Stage E: 可系统化
 1. 保存 FP16/BF16、KIVI 2-bit、可选 KIVI 4-bit 的 baseline。
 2. 记录 seed、dtype、GPU、CUDA 版本、代码 commit 与 dirty 状态、完整配置。
 3. 同配置重复运行至少 3 次，确认波动可解释。
+4. **补充连续指标 PPL**：LongBench 的 F1/ROUGE/accuracy 粒度太粗，4k 截断下 2-bit 平均只掉 0.59 分，与评分噪声同量级；WikiText-2 的 perplexity 是逐 token 连续损失，对量化误差更灵敏。**必须在 decode 步测量**：KIVI 的 prefill attention 用的是全精度 K/V，量化只写进 cache 供后续步读取，任何"每窗一次 prefill"的指标（PPL、logits 差、hidden 差）对 2/4/16 bit 都恒等。PPL 一律**相对同一 commit 的 FP16 报告 delta**，不报绝对值。
+
+> **执行约定（2026-11-26）**：先用单次评分结果冻结 `baseline_v1`（FP16 51.32 / KIVI-2bit 50.73 / KIVI-4bit 51.18，LongBench 8 任务、4k 截断），M1–M5 以此为对照锚；第 3 条「重复 3 次」推迟到有时间时补跑，补完发布 `baseline_v2`，`baseline_v1` 标记 superseded 但保留。详见 `docs/m0_llama_baseline.md` 第 3.1 节。
+
+**为什么第 4 条只做 PPL、不做 RULER/NIAH**：仓库原本没有任何 PPL / RULER runner（见 1.2 节的评测缺口）。24GB 的 3090 已把 LongBench 截到 4096，而 NIAH / RULER 的价值在 32k–128k，4k 下几乎是送分题；同时长上下文的显存瓶颈是 `T × vocab` 的 logits 张量（4k ≈ 1.0GB、32k ≈ 7.8GB、120k ≈ 28.7GB，已超过整卡容量），而不是 KV（KIVI-2bit 每 token 约 16KB，FP16 为 128KB）。因此 M0 只补一个便宜且灵敏的 PPL 锚点，RULER / NIAH 仍留在 M3。
 
 ### 建议文件与模块
 
@@ -140,12 +145,12 @@ Qwen2.5 相关文件（`models/qwen2_kivi.py`、Qwen loader 分支、Qwen 配置
 1. **模型加载**
    - 使用 `LlamaForCausalLM_KIVI`，并设置 `config.use_flash=True`；
    - 量化参数必须在 `from_pretrained` 之前写入 config；
-   - Llama-3.1-8B 走 GQA flash 路径，Llama-2-7b 走 MHA 路径，两者都要 smoke。
+   - Llama-3.1-8B 走 GQA flash 路径（M0–M5 唯一验证路径）。eager / MHA 路径（原计划用 Llama-2-7b 覆盖）已暂停，不在 M0–M5 验收范围内。
 2. **Cache 边界**
    - prefill 覆盖 `T <= R`、`T > R`、`T % R == 0` 三种切分；
    - decode 1 步与 `R+1` 步后，cache 形状与末位 `kv_seq_len` 正确。
 3. **Tokenizer / prompt**
-   - Llama-3.1 使用 `apply_chat_template`，Llama-2-7b 使用原始 prompt；
+   - Llama-3.1 使用 `apply_chat_template`（Llama-2 原始 prompt 路径暂停）；
    - 生成参数在 FP 与 KIVI 之间保持完全一致。
 4. **数值与功能验证**
    - KIVI 与 FP16 的 logits/PPL 偏差在预期范围，无 NaN；
@@ -161,25 +166,27 @@ Llama 原始项目跑通：
 - [x] `python -m compileall models quant utils metrics.py` 通过（2026-11-22，macOS / CPU-only）；
 - [ ] CUDA 算子编译成功，`quant/gemv.py` 自测通过（待 GPU）；
 - [ ] `example.py`、`long_context_example.py`、`mem_spd_test.py` 至少各成功运行一次（待 GPU）；
-- [ ] LongBench smoke 能完成预测与评分（待 GPU）；
+- [x] LongBench 预测与评分链路跑通（2026-11-26，Llama-3.1-8B 的 FP16 / KIVI-2bit / KIVI-4bit 均完成 8/8 任务预测并评分）；
 - [ ] 已记录环境版本、KIVI 参数与 Llama 路径限制清单（固定参数与限制清单已完成，环境数值待 GPU 填写，见 `docs/m0_llama_baseline.md`）。
 
 模型策略：
 
 - [x] 已与用户确认 L1：M1–M5 使用 Llama-3.1-8B，Qwen2.5 后置到 M5.5；
 - [x] 有书面选型记录，包含 Qwen 的角色、Go/No-Go 与降级方案（`docs/m0_llama_baseline.md`）；
-- [x] M0 未引入任何 Qwen 专用代码或配置（已 grep 确认）。
+- [x] M0 未引入任何 Qwen 专用代码或配置（已 grep 确认）；
+- [x] 模型范围收敛：2026-11-26 起只在 `Llama-3.1-8B-Instruct` 上做实验，Llama-2-7b 暂停。
 
 基线冻结：
 
-- [ ] FP16/BF16 与 KIVI 2-bit（可选 4-bit）baseline 记录完整（待 GPU）；
-- [ ] 同配置重复运行至少 3 次，波动可解释（待 GPU）；
-- [ ] 失败 run 也落盘并保留错误原因（`scripts/m0_baseline.py run` 已支持，待实际运行）；
+- [x] Llama-3.1-8B 的 FP16 / KIVI-2bit / KIVI-4bit baseline 预测与分数已记录，并已冻结为 **`baseline_v1`**（51.32 / 50.73 / 51.18，见 `docs/m0_llama_baseline.md` 第 3.1、6.3 节）；
+- [ ] 同配置重复运行至少 3 次，波动可解释（当前 2 次运行、仅 1 次评分；已按 `baseline_v1` 临时冻结，重跑后发布 `baseline_v2`）；
+- [ ] PPL 补充指标已记录（FP16 参考 + KIVI-2bit / 4bit 的 delta）；`ppl_eval.py` 已就绪，命令见本节第 7 步，待 GPU 执行；
+- [x] 失败 run 也落盘并保留错误原因（`scripts/m0_baseline.py run` 已落盘 30 次 `rc=1`，原因待汇总）；
 - [x] 主模型与主量化配置已明确，后续实验不随意改变（L1 + KIVI 2/2/32/128，见 `docs/m0_llama_baseline.md`）。
 
 ### M0 当前实施状态
 
-**进行中：非 GPU 部分已完成，GPU 验证与基线运行待执行。** 2026-11-22 更新：
+**进行中：Llama-3.1-8B 的 LongBench 预测与评分已完成；3 次重复、示例链路与峰值显存待补。** 2026-11-22 记录，2026-11-26 更新：
 
 - M0.1 Llama 原始项目跑通：
   - ✅ 静态检查 `python -m compileall models quant utils metrics.py` 通过（macOS / CPU-only 环境）；
@@ -188,9 +195,9 @@ Llama 原始项目跑通：
   - ✅ 基线记录工具 `scripts/m0_baseline.py`（`check` / `env` / `run`）；
   - ✅ 数据集本地优先 + ModelScope：`utils/modelscope_hub.py` 新增 `load_long_bench_task` / `load_gsm8k_split`。下载前依次检查 `--data_dir`（或 `LONGBENCH_DATA_DIR` / `GSM8K_DATA_DIR`）、`<cache_dir>/longbench/data` 与 `<cache_dir>/gsm8k` 的已解压副本、本机 ModelScope snapshot；都没有才下载 LongBench `ZhipuAI/LongBench` 的 `data.zip`（约 114 MB）或 `modelscope/gsm8k` 声明的 jsonl。`pred_long_bench.py` / `example.py` 不再访问 `huggingface.co`（`--data_source hf` 仍可显式切回）；
   - ✅ 默认下载目录：未显式传 `--cache_dir` 时，ModelScope 模型落 `~/data/modelscope/`，HF 模型落 `~/data/hf/hub/`，HF 数据集落 `~/data/hf/datasets/`，LongBench / GSM8K 解压副本落 `~/data/datasets/{longbench,gsm8k}/`；根目录可用 `KIVI_DATA_DIR` 覆盖；
-  - ⏳ CUDA 算子编译、`quant/gemv.py`、`example.py`、`long_context_example.py`、`mem_spd_test.py`、LongBench smoke 待 GPU 机器执行。
+  - ⏳ CUDA 算子编译、`quant/gemv.py`、`example.py`、`long_context_example.py`、`mem_spd_test.py` 待 GPU 机器执行（LongBench 预测与评分链路已于 2026-11-26 跑通）。
 - M0.2 模型策略确认：✅ 已与用户确认 **L1**；书面选型记录见 `docs/m0_llama_baseline.md`；M0 未引入任何 Qwen 代码/配置（已 grep 确认）。
-- M0.3 基线冻结：⏳ 记录脚本与模板就绪；FP16 / KIVI-2 / KIVI-4 的 3 次重复运行待 GPU 执行。
+- M0.3 基线冻结：✅ 2026-11-26 在 8×RTX 3090 上完成 Llama-3.1-8B 的 FP16 / KIVI-2bit / KIVI-4bit 各 2 次完整预测（`rc=0`，8/8 任务），并对第 2 次预测评分；**该结果已指定为 `baseline_v1`**（FP16 51.32 / KIVI-2bit 50.73 / KIVI-4bit 51.18），M1–M5 以它为对照锚，详见 `docs/m0_llama_baseline.md` 第 3.1、6.3 节。⏳ 仍缺：PPL 补充指标（`ppl_eval.py` 已就绪，待执行）、第 3 次重复与独立评分（重跑后发布 `baseline_v2`）、峰值显存（需 `mem_spd_test.py`）、`example.py` / `long_context_example.py` 示例链路。Llama-2-7b 组暂停执行。
 
 非 GPU 环境说明：当前开发机为 macOS、无 NVIDIA GPU、CPU-only torch 2.15，项目依赖（transformers / datasets / modelscope / triton / flash-attn）未安装，因此 GPU 项无法在本机完成。
 
@@ -271,21 +278,20 @@ python long_context_example.py
 python mem_spd_test.py
 ```
 
-#### 5. LongBench smoke（先 Llama-2-7b，再 Llama-3.1-8B）
+#### 5. LongBench smoke（Llama-3.1-8B）
 
 ```bash
-bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms
-python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128
-
 bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
 python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_4096_2bits_group32_residual128
 ```
+
+Llama-2-7b 的对应命令（`bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms`）自 2026-11-26 起暂停，仅保留备查。
 
 #### 6. 基线矩阵：每个配置重复 3 次
 
 成功与失败尝试都由 `scripts/m0_baseline.py run` 落盘到 `results/m0_baselines/`。
 
-Llama-2-7b-ms（ModelScope 默认；HF 等价 `meta-llama/Llama-2-7b-hf`）：
+Llama-2-7b-ms（ModelScope 默认；HF 等价 `meta-llama/Llama-2-7b-hf`）—— **自 2026-11-26 起暂停，不执行**，命令保留备查：
 
 ```bash
 python scripts/m0_baseline.py run --name llama2_fp16_longbench --repeat 3 -- \
@@ -296,31 +302,102 @@ python scripts/m0_baseline.py run --name llama2_kivi4_longbench --repeat 3 -- \
     bash scripts/long_test.sh 0 4 4 32 128 modelscope/Llama-2-7b-ms
 ```
 
-Llama-3.1-8B-Instruct：
+Llama-3.1-8B-Instruct
 
 ```bash
-python scripts/m0_baseline.py run --name llama31_fp16_longbench --repeat 3 -- \
+python scripts/m0_baseline.py run --name llama31_fp16_longbench  -- \
     bash scripts/long_test.sh 0 16 16 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
-python scripts/m0_baseline.py run --name llama31_kivi2_longbench --repeat 3 -- \
+python scripts/m0_baseline.py run --name llama31_kivi2_longbench  -- \
     bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
-python scripts/m0_baseline.py run --name llama31_kivi4_longbench --repeat 3 -- \
+python scripts/m0_baseline.py run --name llama31_kivi4_longbench  -- \
     bash scripts/long_test.sh 0 4 4 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct
 ```
+
+三张 3090 并行跑三组配置（推荐；每组独立 `--out-dir`，避免 `env.json` / `manifest.jsonl` 并发覆盖）：
+
+```bash
+mkdir -p logs
+
+nohup env CUDA_DEVICE_ORDER=PCI_BUS_ID \
+    python scripts/m0_baseline.py run \
+    --out-dir results/m0_baselines/llama31_fp16 \
+    --name llama31_fp16_longbench --repeat 2 -- \
+    bash scripts/long_test.sh 4 16 16 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    > logs/llama31_fp16.log 2>&1 &
+
+nohup env CUDA_DEVICE_ORDER=PCI_BUS_ID \
+    python scripts/m0_baseline.py run \
+    --out-dir results/m0_baselines/llama31_kivi2 \
+    --name llama31_kivi2_longbench --repeat 2 -- \
+    bash scripts/long_test.sh 5 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    > logs/llama31_kivi2.log 2>&1 &
+
+nohup env CUDA_DEVICE_ORDER=PCI_BUS_ID \
+    python scripts/m0_baseline.py run \
+    --out-dir results/m0_baselines/llama31_kivi4 \
+    --name llama31_kivi4_longbench --repeat 2  -- \
+    bash scripts/long_test.sh 7 4 4 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    > logs/llama31_kivi4.log 2>&1 &
+
+wait
+```
+
+- 三组分别占 GPU 0/1/2，各自独立加载 8B 模型，不做模型切分；
+- 首次并行前先确认 LongBench 数据已缓存，避免三个进程同时下载/解压；
+- 先做链路 smoke 时可把 `--repeat 3` 改为 `--repeat 1`；
+- `wait` 只等三组结束，不合并结果；分数仍需分别跑 `eval_long_bench.py`。
 
 注意：`long_test.sh` 每次运行会覆盖同名 `pred/` 目录。若需保留逐次分数，把评分与结果复制接进 `run` 命令：
 
 ```bash
-python scripts/m0_baseline.py run --name llama2_kivi2_r1 --repeat 1 -- \
-    bash -c 'bash scripts/long_test.sh 0 2 2 32 128 modelscope/Llama-2-7b-ms && \
-             python eval_long_bench.py --model Llama-2-7b-ms_4096_2bits_group32_residual128 && \
-             cp pred/Llama-2-7b-ms_4096_2bits_group32_residual128/result.json \
-                results/m0_baselines/llama2_kivi2_r1_result.json'
+python scripts/m0_baseline.py run --name llama31_kivi2_r1 --repeat 1 -- \
+    bash -c 'bash scripts/long_test.sh 0 2 2 32 128 LLM-Research/Meta-Llama-3.1-8B-Instruct && \
+             python eval_long_bench.py --model Meta-Llama-3.1-8B-Instruct_4096_2bits_group32_residual128 && \
+             cp pred/Meta-Llama-3.1-8B-Instruct_4096_2bits_group32_residual128/result.json \
+                results/m0_baselines/llama31_kivi2_r1_result.json'
 ```
 
-#### 7. 结果归档
+#### 7. PPL 补充基线
 
-- 把 `results/m0_baselines/env.json` 中的 GPU / CUDA / 依赖版本填入 `docs/m0_llama_baseline.md` 第 4 节；
+LongBench 在 4k 截断下降幅太小（2-bit 平均 −0.59），需要连续指标补充判读。`ppl_eval.py` 用 WikiText-2 算逐 token 的**续写损失（在 decode 步测量）**，**固定相对 FP16 报告 delta**。
+
+```bash
+# 1) FP16 参考（先跑这个，后面都以它为基准）
+nohup python ppl_eval.py \
+    --model_name_or_path LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --device 7 --k_bits 16 --v_bits 16 \
+    --json_out results/sink/ppl/llama31_fp16_4k.json
+
+# 2) KIVI-2bit / 4bit，直接打印 delta
+nohup python ppl_eval.py \
+    --model_name_or_path LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --device 7 --k_bits 2 --v_bits 2 \
+    --reference results/sink/ppl/llama31_fp16_4k.json \
+    --json_out results/sink/ppl/llama31_kivi2_4k.json
+
+nohup python ppl_eval.py \
+    --model_name_or_path LLM-Research/Meta-Llama-3.1-8B-Instruct \
+    --device 7 --k_bits 4 --v_bits 4 \
+    --reference results/sink/ppl/llama31_fp16_4k.json \
+    --json_out results/sink/ppl/llama31_kivi4_4k.json
+```
+
+口径（不要改，否则跨阶段不可比）：
+
+- **只在 decode 步测量**。KIVI 的 prefill attention 用的是刚投影出来的全精度 K/V，量化发生在其后、只写进 cache（`models/llama_kivi.py` 里 `_flash_attention_forward` 在前，打包在后）。因此"每窗一次 prefill"的 PPL 对 2/4/16 bit **逐位相同**——2026-11-27 实测三组 `nll_sum` 完全一致，就是在这一步踩的坑。脚本现在的口径是「512 token 前缀 prefill + 2048 步 teacher-forced decode」，每个评分位置都读取量化后的历史。
+- 报告的指标是**「给定前缀后的续写损失」**，不是标准 WikiText PPL：三组之间可比，但**不能**与 KIVI 论文的 PPL 绝对值相比。JSON 里 `metric` 字段固定标注。
+- 窗口 `--windows 8`，在语料上等距取；贪心解码、无采样，`--batch_size 8` 只影响并发窗口数，不影响数值。
+- 不能改成"整块 chunk + past 一起喂"：KIVI 的 decode 分支断言 `value_full_length == residual_length + 1`，只支持单 token 增量。
+- 数据三级优先：`--data_file` → `<KIVI_DATA_DIR>/datasets/wikitext/wikitext-2-raw-v1_test.txt` → 本地 `wikitext.py` 数据集脚本（`datasets.load_dataset`，不经过 `modelscope.msdatasets`，规避 `datasets==2.16.1` 的 `LargeList` 导入失败）。首次跑完缓存成纯文本，之后离线可跑。
+- 只报相对 FP16 的 `delta`，不报绝对 PPL：instruct 模型续写 WikiText 的绝对值没有意义。
+- `--reference` 与 `--json_out` 不得指向同一文件（脚本已加硬检查；出现 `delta: +0.0000 (+0.00%)` 说明自比了）。
+- 显存：前缀 prefill 的 logits 是 `windows × prefill_length × vocab`，8×512 时约 1.0 GB；权重 15 GB，整机约 19 GB。默认参数下每个配置约 3–5 分钟（2048 步 decode）。
+
+#### 8. 结果归档
+
+- 把各 `--out-dir` 下的 `env.json`（如 `results/m0_baselines/llama31_fp16/env.json`）中的 GPU / CUDA / 依赖版本填入 `docs/m0_llama_baseline.md` 第 4 节；
 - 把 3 次重复的分数与波动填入第 6.3 节；
+- 把 PPL 的 `delta`（FP16 / KIVI-2bit / KIVI-4bit）填入第 6.3 节，JSON 放在 `results/sink/ppl/`；
 - 把失败 run 的 `returncode` / `stderr` 与原因填入第 8 节；
 - 全部通过后，把本节 M0 验收勾选更新为完成。
 
@@ -450,7 +527,7 @@ flowchart TD
 - [ ] exact 与 proxy 模式的 Spearman 相关报告可用；
 - [ ] 校准过程不改变原模型输出。
 - [ ] 路径隔离检查：`git diff <M0 基线冻结 commit>..<M1 commit> -- models/ quant/ pred_long_bench.py eval_long_bench.py utils/` 为空，或只包含已记录且不影响默认执行路径的改动；
-- [ ] M0 回归检查：用 M0 冻结的配置与 seed 重跑 LongBench 与 `mem_spd_test.py`，分数在既定容差内，耗时与峰值显存无系统性变化；若有变化，记录原因并重新基线化，不允许静默覆盖 M0 数字。
+- [ ] M0 回归检查：用 M0 冻结的配置与 seed 重跑 LongBench、`mem_spd_test.py` 与 `ppl_eval.py`，分数在既定容差内，耗时与峰值显存无系统性变化；若有变化，记录原因并重新基线化，不允许静默覆盖 M0 数字。对照锚为 `baseline_v1`（FP16 51.32 / KIVI-2bit 50.73 / KIVI-4bit 51.18）；PPL 以 FP16 的 delta 为准。**注意**：`baseline_v1` 是单次评分、没有方差，因此容差只能先按约定值取（建议 LongBench 逐任务 ±1.0 分、平均 ±0.5 分，贪心解码下理想值应为 0；PPL 建议相对 delta ±0.5%），等 `baseline_v2` 有 3 次重复后再换成实测方差。
 
 ### M1 指标验证
 
@@ -625,7 +702,8 @@ tests/test_fake_quant.py
    - oracle token selection。
 4. 优先评测仓库已有 LongBench 长输入短输出任务；
 5. 补充 PPL 与 RULER/NIAH runner：
-   - 先实现可复现小子集；
+   - PPL：`ppl_eval.py` 已在 M0 落地（WikiText-2、4096 窗口、相对 FP16 报 delta），M3 直接复用同一口径，不另写实现；
+   - RULER/NIAH：先实现可复现小子集（24GB 单卡下受 logits 张量限制，先做 ≤8k 的版本）；
    - 输出逐任务分数与平均分。
 6. 结果表格必须区分：
    - 算法收益；
@@ -645,6 +723,7 @@ results/sink/
 
 - [ ] 每个方法至少 3 个随机种子或明确说明确定性任务；
 - [ ] 主表格包含精度、理论 FP bytes/token、metadata 估计；
+- [ ] 主表格同时给出 Δ 相对 `baseline_v1` 的 FP16（51.32）与 KIVI-default（50.73）两列，方法间差异以此为准，不只报绝对分数；
 - [ ] combined 相对 uniform/random/reverse 有稳定增益，或形成明确负结果结论；
 - [ ] oracle 与实际分配差距可量化。
 
@@ -917,7 +996,7 @@ results/sink/
 
 | 时间 | 里程碑 | 关键输出 | Go / No-Go |
 |---|---|---|---|
-| 第 0.5–1 周 | M0 Llama 跑通、基线冻结与模型策略确认 | Llama-3.1-8B / Llama-2-7b 基线、环境记录、L1 选型记录 | Llama smoke 通过且 L1 经用户确认；否则先解决环境问题 |
+| 第 0.5–1 周 | M0 Llama 跑通、基线冻结与模型策略确认 | Llama-3.1-8B 基线（Llama-2 已暂停）、环境记录、L1 选型记录 | Llama smoke 通过且 L1 经用户确认；否则先解决环境问题 |
 | 第 1.5–2 周 | M1 可观察 | token score、`A_l`、proxy 相关性 | 层间分数存在非平凡差异；否则转向 head 级或误差项 |
 | 第 3 周 | M2 可保护 | fake-quant、预算分配、oracle 验证 | oracle 保护必须有增益；否则重新定义 score |
 | 第 4–5 周 | M3 主矩阵 | 相同预算 baseline 对比（Llama） | combined 优于 uniform/random/reverse，或形成负结果 |
@@ -1067,7 +1146,7 @@ L1 的代价是主矩阵需要在 Qwen 上再跑一遍。为控制成本，M5.5 
 | 角色 | 模型 | 用途 | 进入阶段 | 基线冻结 |
 | --- | --- | --- | --- | --- |
 | 开发宿主 | `meta-llama/Llama-3.1-8B-Instruct` | M1–M5 全部创新模块、GQA、长上下文 | M0.1 | 首个冻结 |
-| MHA 回归 | `meta-llama/Llama-2-7b-hf` | MHA 路径回归、LongBench 兼容 | M0.1 | 与 Llama-3.1 一起 |
+| MHA 回归（**暂停**） | `meta-llama/Llama-2-7b-hf` | MHA 路径回归、LongBench 兼容 | 暂停（2026-11-26） | 不冻结 |
 | Qwen 移植开发 | `Qwen/Qwen2.5-1.5B-Instruct` | 移植正确性、低成本复跑 | M5.5 | 移植后冻结 |
 | 最终主模型候选 | `Qwen/Qwen2.5-7B-Instruct` | 论文主表、M3/M4/M5 复跑 | M5.5 | 移植通过后冻结 |
 | 跨模型泛化 | `meta-llama/Llama-3.1-8B-Instruct` | 第二 family、泛化表 | M5.5/M7 | 复用开发宿主基线 |
@@ -1193,7 +1272,7 @@ L1 不在 Qwen 上重复全部消融。必须复跑：
 
 | 阶段 | 修改 |
 | --- | --- |
-| M0.2 | 已并入 M0：确认开发宿主 Llama-3.1-8B、MHA 回归 Llama-2-7b；Qwen 移植在 M5.5 执行，M0 不接入 Qwen |
+| M0.2 | 已并入 M0：`Llama-3.1-8B-Instruct` 是唯一模型；Llama-2-7b（MHA 回归）自 2026-11-26 起暂停；Qwen 移植在 M5.5 执行，M0 不接入 Qwen |
 | M1 | 在 Llama-3.1-8B 上实现；exact/proxy 统计同时保留 |
 | M2 | 在 Llama-3.1-8B 上完成 fake-quant 与 oracle；oracle 正向是继续 M3 的 Go 条件 |
 | M3 | 主矩阵在 Llama-3.1-8B 上完成并冻结；这是 L1 的核心证据 |
@@ -1225,7 +1304,7 @@ M0–M5 与 M5.5 的完整时间安排已并入第 5 节，本节不再单独维
 - [ ] 9 元组每项 shape/dtype 与 `Tq/p`、`Tq/g` 公式一致；
 - [ ] `T <= R`、`T > R`、`T % R == 0` 三种 prefill 切分正确；
 - [ ] decode 后 K/V 的 `Tq + Tf == kv_seq_len`；
-- [ ] GQA ratio = 1（Llama-2）、4（Llama-3.1）、6（Qwen2.5-1.5B）、7（Qwen2.5-7B）均通过；
+- [ ] GQA ratio = 4（Llama-3.1）、6（Qwen2.5-1.5B）、7（Qwen2.5-7B）均通过；ratio = 1 的 MHA 路径（原 Llama-2）已暂停；
 - [ ] batch=1、无 padding 必过；padded batch 不作为第一版阻塞项。
 
 #### 研究结论一致性
