@@ -35,6 +35,9 @@ class LlamaAttention_KIVI(nn.Module):
         self.v_bits = config.v_bits
         self.group_size = config.group_size
         self.residual_length = config.residual_length
+        # Number of leading positions kept in FP16 across every layer (0 = off).
+        # Used to probe how much of the quantization loss sits on the prefix sinks.
+        self.protect_prefix = int(getattr(config, "protect_prefix", 0) or 0)
         assert getattr(config, "use_flash", False), "currently KIVI is only available for flash-attn. Please add ```config.use_flash = True```"
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
@@ -335,10 +338,29 @@ class LlamaFlashAttention_KIVI(LlamaAttention_KIVI):
             else:
                 key_states_full = key_states
             att_qkfull = torch.matmul(query_states, repeat_kv(key_states_full, self.num_key_value_groups).transpose(2, 3))
+            # Optional FP protection of the leading positions.  Their 2-bit copies
+            # stay in the packed pool; their scores are swapped for the FP ones in
+            # place, so the concatenation keeps the original positional order.
+            key_states_prot = past_key_value[8] if len(past_key_value) > 10 else None
+            value_states_prot = past_key_value[9] if len(past_key_value) > 10 else None
+            protect = 0
+            if key_states_prot is not None and att_qkquant is not None:
+                protect = min(key_states_prot.shape[-2], att_qkquant.shape[-1])
+            if protect:
+                att_qkprot = torch.matmul(
+                    query_states,
+                    repeat_kv(key_states_prot, self.num_key_value_groups).transpose(2, 3),
+                )
+                att_qkquant = att_qkquant[..., protect:]
+            score_parts = []
+            if protect:
+                score_parts.append(att_qkprot)
             if att_qkquant is not None:
-                attn_weights = torch.cat([att_qkquant, att_qkfull], dim=-1) / math.sqrt(self.head_dim)
-            else:
-                attn_weights = att_qkfull / math.sqrt(self.head_dim)
+                score_parts.append(att_qkquant)
+            score_parts.append(att_qkfull)
+            attn_weights = (
+                score_parts[0] if len(score_parts) == 1 else torch.cat(score_parts, dim=-1)
+            ) / math.sqrt(self.head_dim)
 
             if key_states_full.shape[-2] == self.residual_length:
                 assert self.residual_length % self.group_size == 0
@@ -383,9 +405,27 @@ class LlamaFlashAttention_KIVI(LlamaAttention_KIVI):
                 # [B, nh_kv, T, hd] and matmul fails on dim 1.
                 attn_output = torch.matmul(attn_weights, repeat_kv(value_states_full, self.num_key_value_groups))
             else:
-                attn_output = cuda_bmm_fA_qB_outer(self.group_size, attn_weights[:, :, :, :-value_full_length], value_states_quant,
-                                                value_scale, value_mn, self.v_bits)
-                attn_output += torch.matmul(attn_weights[:, :, :, -value_full_length:], repeat_kv(value_states_full, self.num_key_value_groups))
+                full_weights = attn_weights[:, :, :, -value_full_length:]
+                if protect and value_states_quant.shape[-2] >= protect:
+                    # The first `protect` slots of the quantized V pool cover the
+                    # same positions as the FP copies swapped in above: zero their
+                    # weight and add the FP term so each token contributes once.
+                    quant_weights = attn_weights[:, :, :, :-value_full_length]
+                    quant_weights = torch.cat(
+                        [quant_weights.new_zeros(*quant_weights.shape[:-1], protect),
+                         quant_weights[..., protect:]],
+                        dim=-1,
+                    )
+                    attn_output = cuda_bmm_fA_qB_outer(self.group_size, quant_weights, value_states_quant,
+                                                    value_scale, value_mn, self.v_bits)
+                    attn_output += torch.matmul(
+                        attn_weights[:, :, :, :protect],
+                        repeat_kv(value_states_prot, self.num_key_value_groups),
+                    )
+                else:
+                    attn_output = cuda_bmm_fA_qB_outer(self.group_size, attn_weights[:, :, :, :-value_full_length], value_states_quant,
+                                                    value_scale, value_mn, self.v_bits)
+                attn_output += torch.matmul(full_weights, repeat_kv(value_states_full, self.num_key_value_groups))
             attn_output = attn_output.transpose(1, 2).contiguous()
             if value_full_length > self.residual_length:
                 assert value_full_length == self.residual_length + 1
@@ -455,8 +495,14 @@ class LlamaFlashAttention_KIVI(LlamaAttention_KIVI):
                                                                                                 self.group_size, 
                                                                                                 self.v_bits)
 
-        past_key_value = (key_states_quant_trans, key_states_full, key_scale_trans, key_mn_trans, 
-                          value_states_quant, value_states_full, value_scale, value_mn, kv_seq_len) if use_cache else None
+        if past_key_value is None:
+            # Prefill pass: pin the leading positions in FP for the whole run.
+            prefix = min(self.protect_prefix, key_states.shape[-2])
+            key_states_prot = key_states[:, :, :prefix, :].contiguous() if prefix else None
+            value_states_prot = value_states[:, :, :prefix, :].contiguous() if prefix else None
+        past_key_value = (key_states_quant_trans, key_states_full, key_scale_trans, key_mn_trans,
+                          value_states_quant, value_states_full, value_scale, value_mn,
+                          key_states_prot, value_states_prot, kv_seq_len) if use_cache else None
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
 
         if self.config.pretraining_tp > 1:

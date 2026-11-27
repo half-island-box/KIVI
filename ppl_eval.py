@@ -123,6 +123,9 @@ def build_parser():
     parser.add_argument("--v_bits", type=int, default=2, choices=(2, 4, 8, 16))
     parser.add_argument("--group_size", type=int, default=32)
     parser.add_argument("--residual_length", type=int, default=128)
+    parser.add_argument("--protect_prefix", type=int, default=0,
+                        help="keep the first N positions in FP16 in every layer "
+                             "(KIVI path only; 0 disables protection)")
     parser.add_argument("--prefill_length", type=int, default=512,
                         help="prefix tokens fed as one prefill (default 512)")
     parser.add_argument("--decode_length", type=int, default=2048,
@@ -263,6 +266,8 @@ def load_model(args, model_path, device):
     config.v_bits = args.v_bits
     config.group_size = args.group_size
     config.residual_length = args.residual_length
+    # Probe switch: keep the leading positions in FP16 (see models/llama_kivi.py).
+    config.protect_prefix = args.protect_prefix
     # The KIVI attention path asserts use_flash (models/llama_kivi.py).
     config.use_flash = True
 
