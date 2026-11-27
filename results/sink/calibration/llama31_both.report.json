@@ -1,0 +1,443 @@
+{
+  "report_version": 1,
+  "source": {
+    "path": "results/sink/calibration/llama31_both.json",
+    "created_at": "2026-11-27T12:28:16+00:00",
+    "model_path": "/home/ubuntu/data/modelscope/models/LLM-Research--Meta-Llama-3.1-8B-Instruct/snapshots/master",
+    "mode": "both",
+    "schema_version": 1
+  },
+  "coverage": {
+    "num_samples": 8,
+    "num_samples_skipped": 0,
+    "num_layers": 32,
+    "has_exact": true,
+    "has_proxy": true,
+    "token_scores_saved": true
+  },
+  "config": {
+    "top_m": 4,
+    "max_length": 512,
+    "query_fraction": 1.0,
+    "n_boot": 1000,
+    "ci": 0.95
+  },
+  "layer_scores": {
+    "uniform_reference": 0.0078125,
+    "exact": {
+      "num_layers": 32,
+      "mean_over_layers": 0.6971072684973478,
+      "min": 0.4070482850074768,
+      "max": 0.8741874098777771,
+      "range": 0.4671391248703003,
+      "cv": 0.1844709227436939,
+      "ci_width_mean": 0.0183420293033123,
+      "uniform_reference": 0.0078125,
+      "excess_over_uniform": 0.6892947684973478,
+      "per_layer": [
+        {
+          "layer": 0,
+          "exact_A_mean": 0.4070482850074768,
+          "exact_ci_width": 0.006267517805099487
+        },
+        {
+          "layer": 1,
+          "exact_A_mean": 0.8282397389411926,
+          "exact_ci_width": 0.006369650363922119
+        },
+        {
+          "layer": 2,
+          "exact_A_mean": 0.8741874098777771,
+          "exact_ci_width": 0.00480341911315918
+        },
+        {
+          "layer": 3,
+          "exact_A_mean": 0.8188910484313965,
+          "exact_ci_width": 0.0092393159866333
+        },
+        {
+          "layer": 4,
+          "exact_A_mean": 0.7538052797317505,
+          "exact_ci_width": 0.01339632272720337
+        },
+        {
+          "layer": 5,
+          "exact_A_mean": 0.697464108467102,
+          "exact_ci_width": 0.017491281032562256
+        },
+        {
+          "layer": 6,
+          "exact_A_mean": 0.6327246427536011,
+          "exact_ci_width": 0.016540884971618652
+        },
+        {
+          "layer": 7,
+          "exact_A_mean": 0.5527746081352234,
+          "exact_ci_width": 0.021425306797027588
+        },
+        {
+          "layer": 8,
+          "exact_A_mean": 0.5594439506530762,
+          "exact_ci_width": 0.022938311100006104
+        },
+        {
+          "layer": 9,
+          "exact_A_mean": 0.5363354086875916,
+          "exact_ci_width": 0.017772018909454346
+        },
+        {
+          "layer": 10,
+          "exact_A_mean": 0.6161090731620789,
+          "exact_ci_width": 0.019336938858032227
+        },
+        {
+          "layer": 11,
+          "exact_A_mean": 0.498637318611145,
+          "exact_ci_width": 0.027278244495391846
+        },
+        {
+          "layer": 12,
+          "exact_A_mean": 0.47061604261398315,
+          "exact_ci_width": 0.02270093560218811
+        },
+        {
+          "layer": 13,
+          "exact_A_mean": 0.5630931854248047,
+          "exact_ci_width": 0.014791667461395264
+        },
+        {
+          "layer": 14,
+          "exact_A_mean": 0.5632227659225464,
+          "exact_ci_width": 0.02501976490020752
+        },
+        {
+          "layer": 15,
+          "exact_A_mean": 0.6025630235671997,
+          "exact_ci_width": 0.02347773313522339
+        },
+        {
+          "layer": 16,
+          "exact_A_mean": 0.6641217470169067,
+          "exact_ci_width": 0.025391101837158203
+        },
+        {
+          "layer": 17,
+          "exact_A_mean": 0.6745391488075256,
+          "exact_ci_width": 0.015543758869171143
+        },
+        {
+          "layer": 18,
+          "exact_A_mean": 0.7834721207618713,
+          "exact_ci_width": 0.016531646251678467
+        },
+        {
+          "layer": 19,
+          "exact_A_mean": 0.8149608373641968,
+          "exact_ci_width": 0.02548801898956299
+        },
+        {
+          "layer": 20,
+          "exact_A_mean": 0.7942769527435303,
+          "exact_ci_width": 0.01983886957168579
+        },
+        {
+          "layer": 21,
+          "exact_A_mean": 0.7759487628936768,
+          "exact_ci_width": 0.02481973171234131
+        },
+        {
+          "layer": 22,
+          "exact_A_mean": 0.8091909289360046,
+          "exact_ci_width": 0.017140448093414307
+        },
+        {
+          "layer": 23,
+          "exact_A_mean": 0.8537530899047852,
+          "exact_ci_width": 0.012086272239685059
+        },
+        {
+          "layer": 24,
+          "exact_A_mean": 0.8722190260887146,
+          "exact_ci_width": 0.020760774612426758
+        },
+        {
+          "layer": 25,
+          "exact_A_mean": 0.8712694048881531,
+          "exact_ci_width": 0.014013051986694336
+        },
+        {
+          "layer": 26,
+          "exact_A_mean": 0.7759643197059631,
+          "exact_ci_width": 0.021557092666625977
+        },
+        {
+          "layer": 27,
+          "exact_A_mean": 0.7944372296333313,
+          "exact_ci_width": 0.02351701259613037
+        },
+        {
+          "layer": 28,
+          "exact_A_mean": 0.7452116012573242,
+          "exact_ci_width": 0.014445126056671143
+        },
+        {
+          "layer": 29,
+          "exact_A_mean": 0.7889279127120972,
+          "exact_ci_width": 0.014704227447509766
+        },
+        {
+          "layer": 30,
+          "exact_A_mean": 0.6459462642669678,
+          "exact_ci_width": 0.031242012977600098
+        },
+        {
+          "layer": 31,
+          "exact_A_mean": 0.6680373549461365,
+          "exact_ci_width": 0.021016478538513184
+        }
+      ]
+    },
+    "proxy": {
+      "num_layers": 32,
+      "mean_over_layers": 0.009300363279180601,
+      "min": 0.008979971520602703,
+      "max": 0.009826204739511013,
+      "range": 0.0008462332189083099,
+      "cv": 0.01834954677926235,
+      "ci_width_mean": 0.0002803455572575331,
+      "uniform_reference": 0.0078125,
+      "excess_over_uniform": 0.0014878632791806012,
+      "per_layer": [
+        {
+          "layer": 0,
+          "proxy_A_mean": 0.009277859702706337,
+          "proxy_ci_width": 0.0003152787685394287
+        },
+        {
+          "layer": 1,
+          "proxy_A_mean": 0.009063595905900002,
+          "proxy_ci_width": 5.0176866352558136e-05
+        },
+        {
+          "layer": 2,
+          "proxy_A_mean": 0.009159314446151257,
+          "proxy_ci_width": 0.00033358484506607056
+        },
+        {
+          "layer": 3,
+          "proxy_A_mean": 0.009398416616022587,
+          "proxy_ci_width": 0.0003245491534471512
+        },
+        {
+          "layer": 4,
+          "proxy_A_mean": 0.00920520257204771,
+          "proxy_ci_width": 0.00021682865917682648
+        },
+        {
+          "layer": 5,
+          "proxy_A_mean": 0.009313980117440224,
+          "proxy_ci_width": 0.0001813666895031929
+        },
+        {
+          "layer": 6,
+          "proxy_A_mean": 0.00915784016251564,
+          "proxy_ci_width": 0.00011499878019094467
+        },
+        {
+          "layer": 7,
+          "proxy_A_mean": 0.00927210133522749,
+          "proxy_ci_width": 0.00011876598000526428
+        },
+        {
+          "layer": 8,
+          "proxy_A_mean": 0.009477075189352036,
+          "proxy_ci_width": 0.00021422002464532852
+        },
+        {
+          "layer": 9,
+          "proxy_A_mean": 0.009826204739511013,
+          "proxy_ci_width": 0.00033580232411623
+        },
+        {
+          "layer": 10,
+          "proxy_A_mean": 0.009254389442503452,
+          "proxy_ci_width": 0.000274142250418663
+        },
+        {
+          "layer": 11,
+          "proxy_A_mean": 0.009560935199260712,
+          "proxy_ci_width": 0.0002652481198310852
+        },
+        {
+          "layer": 12,
+          "proxy_A_mean": 0.009445436298847198,
+          "proxy_ci_width": 0.00021103210747241974
+        },
+        {
+          "layer": 13,
+          "proxy_A_mean": 0.009309269487857819,
+          "proxy_ci_width": 0.00027622561901807785
+        },
+        {
+          "layer": 14,
+          "proxy_A_mean": 0.009069627150893211,
+          "proxy_ci_width": 0.0003384007140994072
+        },
+        {
+          "layer": 15,
+          "proxy_A_mean": 0.009144741110503674,
+          "proxy_ci_width": 0.00020027626305818558
+        },
+        {
+          "layer": 16,
+          "proxy_A_mean": 0.009170182049274445,
+          "proxy_ci_width": 0.00018278416246175766
+        },
+        {
+          "layer": 17,
+          "proxy_A_mean": 0.009283916093409061,
+          "proxy_ci_width": 0.00026254914700984955
+        },
+        {
+          "layer": 18,
+          "proxy_A_mean": 0.009239094331860542,
+          "proxy_ci_width": 0.000248943455517292
+        },
+        {
+          "layer": 19,
+          "proxy_A_mean": 0.009236553683876991,
+          "proxy_ci_width": 0.00036059506237506866
+        },
+        {
+          "layer": 20,
+          "proxy_A_mean": 0.009290752001106739,
+          "proxy_ci_width": 0.0005261804908514023
+        },
+        {
+          "layer": 21,
+          "proxy_A_mean": 0.009369864128530025,
+          "proxy_ci_width": 0.0003025270998477936
+        },
+        {
+          "layer": 22,
+          "proxy_A_mean": 0.009322292171418667,
+          "proxy_ci_width": 0.0002852706238627434
+        },
+        {
+          "layer": 23,
+          "proxy_A_mean": 0.00934306439012289,
+          "proxy_ci_width": 0.0002611149102449417
+        },
+        {
+          "layer": 24,
+          "proxy_A_mean": 0.009212134405970573,
+          "proxy_ci_width": 0.00032748840749263763
+        },
+        {
+          "layer": 25,
+          "proxy_A_mean": 0.009177982807159424,
+          "proxy_ci_width": 0.00017990637570619583
+        },
+        {
+          "layer": 26,
+          "proxy_A_mean": 0.009530187584459782,
+          "proxy_ci_width": 0.00045779068022966385
+        },
+        {
+          "layer": 27,
+          "proxy_A_mean": 0.009328283369541168,
+          "proxy_ci_width": 0.0004422767087817192
+        },
+        {
+          "layer": 28,
+          "proxy_A_mean": 0.009398541413247585,
+          "proxy_ci_width": 0.00033076386898756027
+        },
+        {
+          "layer": 29,
+          "proxy_A_mean": 0.00917297974228859,
+          "proxy_ci_width": 0.0003017354756593704
+        },
+        {
+          "layer": 30,
+          "proxy_A_mean": 0.009619835764169693,
+          "proxy_ci_width": 0.00046286359429359436
+        },
+        {
+          "layer": 31,
+          "proxy_A_mean": 0.008979971520602703,
+          "proxy_ci_width": 0.0002673706039786339
+        }
+      ]
+    }
+  },
+  "proxy_validity": {
+    "proxy": "key_norm",
+    "token_spearman_mean": -0.4845737587302955,
+    "token_spearman_median": -0.4787455857096363,
+    "token_spearman_positive_layers": 0,
+    "token_spearman_layers": 32,
+    "layer_A_spearman_mean": -0.23611620234604105,
+    "layer_A_spearman_positive_samples": 1,
+    "layer_A_spearman_samples": 8
+  },
+  "stability": {
+    "exact": 0.9886494553833263,
+    "proxy": 0.45201874738165065
+  },
+  "thresholds": {
+    "min_token_spearman": 0.5,
+    "min_layer_spearman": 0.5,
+    "min_stability": 0.7,
+    "min_samples": 8,
+    "min_al_range": 0.0,
+    "max_ci_width": null
+  },
+  "checks": [
+    {
+      "name": "exact_layer_scores",
+      "status": "pass",
+      "detail": "32 layers, mean=0.6971"
+    },
+    {
+      "name": "proxy_layer_scores",
+      "status": "pass",
+      "detail": "32 layers, mean=0.0093"
+    },
+    {
+      "name": "sample_count",
+      "status": "pass",
+      "detail": "8 usable sample(s), 0 skipped; recommended minimum=8"
+    },
+    {
+      "name": "layer_heterogeneity",
+      "status": "pass",
+      "detail": "A_l range=0.4671 (min=0.4070, max=0.8742, threshold=0.0)"
+    },
+    {
+      "name": "proxy_token_spearman",
+      "status": "warn",
+      "detail": "mean token Spearman=-0.4846 (threshold=0.5)"
+    },
+    {
+      "name": "proxy_layer_spearman",
+      "status": "warn",
+      "detail": "mean layer-A Spearman=-0.2361 (threshold=0.5)"
+    },
+    {
+      "name": "cross_sample_stability",
+      "status": "pass",
+      "detail": "best A_l Spearman=0.9886 (threshold=0.7)"
+    },
+    {
+      "name": "ci_width",
+      "status": "skip",
+      "detail": "set --max-ci-width to enable this check"
+    }
+  ],
+  "verdict": "warn",
+  "notes": [
+    "Thresholds are provisional engineering guards, not research conclusions.",
+    "Synthetic artifacts validate the metric tooling only; real-model numbers require a GPU calibration run."
+  ]
+}
