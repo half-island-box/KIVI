@@ -1,0 +1,116 @@
+{
+  "name": "llama31_fp16_mem_spd",
+  "repeat_index": 1,
+  "repeat_total": 1,
+  "command": [
+    "python",
+    "mem_spd_test.py",
+    "--model_name_or_path",
+    "LLM-Research/Meta-Llama-3.1-8B-Instruct",
+    "--device",
+    "7",
+    "--batch_size",
+    "16",
+    "--k_bits",
+    "16",
+    "--v_bits",
+    "16"
+  ],
+  "cwd": "/home/ubuntu/Coding/KIVI",
+  "started_at": "2026-11-27T05:10:12+00:00",
+  "duration_sec": 111.601,
+  "returncode": 0,
+  "success": true,
+  "spawn_error": null,
+  "peak_mem_gb": 18.43247079849243,
+  "used_time_ms": 17027.697881062824,
+  "stdout": "[source] using existing local copy of LLM-Research/Meta-Llama-3.1-8B-Instruct: /home/ubuntu/data/modelscope/models/LLM-Research--Meta-Llama-3.1-8B-Instruct/snapshots/master\nbs: 16, seqlen: 256+338, k_bits: 16, v_bits: 16\nmodel:LLM-Research/Meta-Llama-3.1-8B-Instruct\nused time: 17027.697881062824 ms\npeak mem: 18.43247079849243 GB\n",
+  "stderr": "The model was loaded with use_flash_attention_2=True, which is deprecated and may be removed in a future release. Please use `attn_implementation=\"flash_attention_2\"` instead.\n\nLoading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]\nLoading checkpoint shards:  25%|██▌       | 1/4 [00:36<01:50, 36.71s/it]\nLoading checkpoint shards:  50%|█████     | 2/4 [00:50<00:46, 23.05s/it]\nLoading checkpoint shards:  75%|███████▌  | 3/4 [00:54<00:14, 14.26s/it]\nLoading checkpoint shards: 100%|██████████| 4/4 [00:54<00:00,  8.96s/it]\nLoading checkpoint shards: 100%|██████████| 4/4 [00:54<00:00, 13.71s/it]\nThe attention mask and the pad token id were not set. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.\nSetting `pad_token_id` to `eos_token_id`:128001 for open-end generation.\nThe attention mask is not set and cannot be inferred from input because pad token is same as eos token.As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.\nThe attention mask and the pad token id were not set. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.\nSetting `pad_token_id` to `eos_token_id`:128001 for open-end generation.\nThe attention mask and the pad token id were not set. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.\nSetting `pad_token_id` to `eos_token_id`:128001 for open-end generation.\n",
+  "git": {
+    "commit": "74f99ce5ccf142c14458c9ffc2ad8eae4bd7d702",
+    "branch": "sink_budget",
+    "dirty": true,
+    "dirty_files": [
+      "?? uv.lock"
+    ],
+    "dirty_file_count": 1
+  },
+  "software": {
+    "torch": "2.4.1+cu124",
+    "transformers": "4.43.1",
+    "flash-attn": "2.7.4.post1",
+    "triton": "3.0.0",
+    "accelerate": "1.15.0",
+    "datasets": "2.16.1",
+    "modelscope": "1.40.3",
+    "tokenizers": "0.19.1",
+    "sentencepiece": "0.2.3"
+  },
+  "torch": {
+    "version": "2.4.1+cu124",
+    "cuda_available": true,
+    "cuda_version": "12.4",
+    "cudnn_version": 90100,
+    "device_count": 8,
+    "devices": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      },
+      {
+        "index": 4,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      },
+      {
+        "index": 5,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      },
+      {
+        "index": 6,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      },
+      {
+        "index": 7,
+        "name": "NVIDIA GeForce RTX 3090",
+        "capability": "8.6",
+        "total_memory_gb": 23.57
+      }
+    ]
+  },
+  "nvidia_smi": [
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB",
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB",
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB",
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB",
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB",
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB",
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB",
+    "NVIDIA GeForce RTX 3090, 570.153.02, 24576 MiB"
+  ]
+}
