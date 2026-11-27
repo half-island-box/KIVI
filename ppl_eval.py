@@ -476,6 +476,7 @@ def main(argv=None):
         "v_bits": args.v_bits,
         "group_size": args.group_size,
         "residual_length": args.residual_length,
+        "protect_prefix": args.protect_prefix,
         "prefill_length": args.prefill_length,
         "decode_length": args.decode_length,
         "windows": len(starts),
